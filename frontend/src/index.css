@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Nunito', sans-serif !important;
+  background-color: #0f1923 !important;
+  color: #ffffff !important;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f1923;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a4a6b;
+  border-radius: 3px;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  color: #ffffff;
+  font-weight: 700;
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.9rem;
+}
+
+tr:hover td {
+  background: rgba(255,215,0,0.05);
+  cursor: pointer;
+}
+
+.glass {
+  background: rgba(255,255,255,0.07);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.overperforming {
+  color: #a855f7;
+  font-weight: 700;
+}
+
+.meeting {
+  color: #22c55e;
+  font-weight: 700;
+}
+
+.underperforming {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.nav-link {
+  color: rgba(255,255,255,0.8);
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+.nav-link:hover {
+  color: #ffd700;
+}
+
+.nav-link.active {
+  color: #ffd700;
+}
+
+button {
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+}
