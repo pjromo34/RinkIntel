@@ -21,6 +21,25 @@ def get_db():
     finally:
         db.close()
 
+
+@router.get("")
+@router.get("/")
+def list_articles(user=Depends(admin_required), db: Session = Depends(get_db)):
+    articles = db.query(Article).order_by(Article.created_at.desc()).all()
+    return [
+        {
+            "id": a.id,
+            "title": a.title,
+            "description": a.description,
+            "content": a.content,
+            "header_image": a.header_image,
+            "author": a.author,
+            "published": bool(a.published),
+            "created_at": a.created_at,
+        }
+        for a in articles
+    ]
+
 @router.post("")
 @router.post("/")
 def create_article(payload: Dict[str, Any], user=Depends(admin_required), db: Session = Depends(get_db)):

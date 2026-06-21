@@ -15,7 +15,7 @@ const TEAMS = [
   "New York Rangers", "Ottawa Senators", "Philadelphia Flyers",
   "Pittsburgh Penguins", "San Jose Sharks", "Seattle Kraken",
   "St. Louis Blues", "Tampa Bay Lightning", "Toronto Maple Leafs",
-  "Utah Hockey Club", "Vancouver Canucks", "Vegas Golden Knights",
+  "Utah Mammoth", "Vancouver Canucks", "Vegas Golden Knights",
   "Washington Capitals", "Winnipeg Jets"
 ];
 
@@ -33,18 +33,27 @@ export default function PlayerEditor() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [contracts, setContracts] = useState([]);
 
   useEffect(() => {
     fetch(`${API}/players/${id}`)
       .then(res => res.json())
       .then(data => {
         setPlayer(data);
+        setContracts(Array.isArray(data.contracts) ? data.contracts : []);
         setLoading(false);
       });
   }, [id]);
 
   function update(field, value) {
     setPlayer(p => ({ ...p, [field]: value }));
+  }
+
+  function authHeaders(extra = {}) {
+    const token = localStorage.getItem("token");
+    return token
+      ? { ...extra, Authorization: `Bearer ${token}` }
+      : extra;
   }
 
   async function save() {
@@ -59,19 +68,25 @@ export default function PlayerEditor() {
       points: player.points,
       xg_all_situations: player.xg_all_situations,
       icetime: player.icetime,
-      aav: player.aav
+      aav: player.aav,
+      contract_years_remaining: Number(player.contract_years_remaining) || 0,
+      contract_start_season: player.contract_start_season || null,
+      contracts,
     };
 
     const res = await fetch(`${API}/admin/players/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
 
     setSaving(false);
 
     if (res.ok) navigate("/admin/players");
-    else alert("Save failed");
+    else {
+      const txt = await res.text();
+      alert(`Save failed: ${txt || res.status}`);
+    }
   }
 
   async function uploadHeadshot(e) {
@@ -85,6 +100,7 @@ export default function PlayerEditor() {
 
     const res = await fetch(`${API}/admin/players/${id}/headshot`, {
       method: "POST",
+      headers: authHeaders(),
       body: formData
     });
 
@@ -92,13 +108,26 @@ export default function PlayerEditor() {
 
     if (res.ok) {
       const data = await res.json();
-      setPlayer(p => ({ ...p, headshot_url: data.headshot_url }));
+      setPlayer(p => ({ ...p, headshot_url: data.headshot_url || data.uploaded_headshot_url || p.headshot_url }));
     } else {
-      alert("Upload failed");
+      const txt = await res.text();
+      alert(`Upload failed: ${txt || res.status}`);
     }
   }
 
   if (loading || !player) return <div style={{ padding: 40 }}>Loading…</div>;
+
+  function updateContract(index, field, value) {
+    setContracts(prev => prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)));
+  }
+
+  function addContract() {
+    setContracts(prev => [...prev, { start_season: "", years: 1, aav: Number(player.aav) || 0, bonus_eligible: false, bonus_amount: 0 }]);
+  }
+
+  function removeContract(index) {
+    setContracts(prev => prev.filter((_, i) => i !== index));
+  }
 
   return (
     <div style={{ padding: "32px 40px" }}>
@@ -241,7 +270,7 @@ export default function PlayerEditor() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
             gap: 16,
             marginTop: 32
           }}
@@ -261,6 +290,28 @@ export default function PlayerEditor() {
             <div style={{ padding: 8, fontWeight: 700 }}>
               {formatMoney(player.market_value)}
             </div>
+          </div>
+
+          <div>
+            <label>Contract Years Remaining</label>
+            <input
+              type="number"
+              min="0"
+              value={player.contract_years_remaining ?? 0}
+              onChange={e => update("contract_years_remaining", Number(e.target.value))}
+              style={{ width: "100%", padding: 8 }}
+            />
+          </div>
+
+          <div>
+            <label>Contract Start Season</label>
+            <input
+              type="text"
+              placeholder="2026-27"
+              value={player.contract_start_season || ""}
+              onChange={e => update("contract_start_season", e.target.value)}
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
         </div>
 
@@ -291,6 +342,77 @@ export default function PlayerEditor() {
           >
             Cancel
           </button>
+        </div>
+
+        <div className="glass" style={{ padding: 18, marginTop: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <h3 style={{ margin: 0 }}>Contracts</h3>
+            <button
+              type="button"
+              onClick={addContract}
+              style={{ padding: "6px 10px", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer" }}
+            >
+              + Add Contract
+            </button>
+          </div>
+
+          {contracts.length === 0 && (
+            <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 13 }}>
+              No contracts configured. Add one or more contracts by start season.
+            </div>
+          )}
+
+          {contracts.map((c, idx) => (
+            <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr auto", gap: 10, marginBottom: 10 }}>
+              <input
+                type="text"
+                placeholder="Start season (e.g. 2026-27)"
+                value={c.start_season || ""}
+                onChange={e => updateContract(idx, "start_season", e.target.value)}
+                style={{ width: "100%", padding: 8 }}
+              />
+              <input
+                type="number"
+                min="1"
+                placeholder="Years"
+                value={c.years ?? 1}
+                onChange={e => updateContract(idx, "years", Number(e.target.value) || 1)}
+                style={{ width: "100%", padding: 8 }}
+              />
+              <input
+                type="number"
+                min="0"
+                placeholder="AAV"
+                value={c.aav ?? 0}
+                onChange={e => updateContract(idx, "aav", Number(e.target.value) || 0)}
+                style={{ width: "100%", padding: 8 }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(c.bonus_eligible)}
+                  onChange={e => updateContract(idx, "bonus_eligible", e.target.checked)}
+                />
+                Bonus Eligible
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="Bonus Amount"
+                value={c.bonus_amount ?? 0}
+                onChange={e => updateContract(idx, "bonus_amount", Number(e.target.value) || 0)}
+                style={{ width: "100%", padding: 8 }}
+                disabled={!c.bonus_eligible}
+              />
+              <button
+                type="button"
+                onClick={() => removeContract(idx)}
+                style={{ padding: "8px 10px", background: "#b91c1c", border: "none", color: "#fff", borderRadius: 6, cursor: "pointer" }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./Login";
 import ArticlesAdmin from "./ArticlesAdmin";
@@ -7,10 +7,30 @@ import PlayerEditor from "./PlayerEditor";
 import AdminIndicator from "../../components/AdminIndicator";
 
 export default function Admin() {
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem("token")));
+
+  useEffect(() => {
+    function syncAuthState() {
+      setIsAuthenticated(Boolean(localStorage.getItem("token")));
+    }
+
+    window.addEventListener("storage", syncAuthState);
+    window.addEventListener("rinkintel-auth-changed", syncAuthState);
+
+    return () => {
+      window.removeEventListener("storage", syncAuthState);
+      window.removeEventListener("rinkintel-auth-changed", syncAuthState);
+    };
+  }, []);
+
   const tabs = [
     { to: "/admin/login", label: "Login" },
-    { to: "/admin/articles", label: "Articles" },
-    { to: "/admin/players", label: "Players" }
+    ...(isAuthenticated
+      ? [
+          { to: "/admin/articles", label: "Articles" },
+          { to: "/admin/players", label: "Players" }
+        ]
+      : [])
   ];
 
   return (
@@ -31,9 +51,18 @@ export default function Admin() {
         <Routes>
           <Route path="/" element={<Navigate to="login" replace />} />
           <Route path="login" element={<Login />} />
-          <Route path="articles" element={<ArticlesAdmin />} />
-          <Route path="players" element={<PlayersAdmin />} />
-          <Route path="players/:id" element={<PlayerEditor />} />
+          <Route
+            path="articles"
+            element={isAuthenticated ? <ArticlesAdmin /> : <Navigate to="/admin/login" replace />}
+          />
+          <Route
+            path="players"
+            element={isAuthenticated ? <PlayersAdmin /> : <Navigate to="/admin/login" replace />}
+          />
+          <Route
+            path="players/:id"
+            element={isAuthenticated ? <PlayerEditor /> : <Navigate to="/admin/login" replace />}
+          />
         </Routes>
       </div>
     </div>

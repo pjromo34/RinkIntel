@@ -28,7 +28,7 @@ export default function ArticlesAdmin() {
   async function fetchArticles() {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/articles/all`, { headers: authHeaders() });
+      const res = await fetch(`${API}/admin/articles`, { headers: authHeaders() });
       if (!res.ok) {
         console.error("Failed to fetch articles", await res.text());
         setArticles([]);
@@ -51,13 +51,13 @@ export default function ArticlesAdmin() {
     const payload = { ...form };
     try {
       if (editId) {
-        await fetch(`${API}/articles/${editId}`, {
-          method: "PUT",
+        await fetch(`${API}/admin/articles/${editId}`, {
+          method: "PATCH",
           headers: authHeaders(),
           body: JSON.stringify(payload)
         });
       } else {
-        await fetch(`${API}/articles`, {
+        await fetch(`${API}/admin/articles`, {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify(payload)
@@ -87,7 +87,7 @@ export default function ArticlesAdmin() {
   async function handleDelete(id) {
     if (!window.confirm("Delete this article?")) return;
     try {
-      await fetch(`${API}/articles/${id}`, {
+      await fetch(`${API}/admin/articles/${id}`, {
         method: "DELETE",
         headers: authHeaders()
       });
@@ -99,10 +99,10 @@ export default function ArticlesAdmin() {
 
   async function handleTogglePublish(a) {
     try {
-      await fetch(`${API}/articles/${a.id}`, {
-        method: "PUT",
+      await fetch(`${API}/admin/articles/${a.id}`, {
+        method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ ...a, published: !a.published })
+        body: JSON.stringify({ published: !a.published })
       });
       fetchArticles();
     } catch (e) {

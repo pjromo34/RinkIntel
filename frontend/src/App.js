@@ -3,6 +3,8 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
 import Home from './pages/Home';
 import Teams from './pages/Teams';
+import Players from './pages/Players';
+import PerformanceBonuses from './pages/PerformanceBonuses';
 import PlayerProfile from './pages/PlayerProfile';
 import Calculator from './pages/Calculator';
 import News from './pages/News';
@@ -29,7 +31,8 @@ function App() {
             <NavLink to="/" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Home</NavLink>
             <NavLink to="/calculator" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Performance Calculator</NavLink>
             <NavLink to="/news" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>News</NavLink>
-            <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Admin</NavLink>
+            <NavLink to="/players" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Players</NavLink>
+            <NavLink to="/bonuses" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Performance Bonuses</NavLink>
           </div>
           <div style={{ fontWeight: 800, fontSize: '1.4rem', letterSpacing: '0.05em', color: '#ffd700' }}>
             RINKINTEL
@@ -39,6 +42,8 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/team/:teamCode" element={<Teams />} />
+          <Route path="/players" element={<Players />} />
+          <Route path="/bonuses" element={<PerformanceBonuses />} />
           <Route path="/player/:playerName" element={<PlayerProfile />} />
           <Route path="/calculator" element={<Calculator />} />
           <Route path="/news" element={<News />} />

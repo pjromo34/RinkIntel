@@ -10,22 +10,46 @@ function formatMoney(val) {
 
 function getVerdict(actual, market) {
   const delta = market - actual;
-  if (delta > 1000000) return { label: 'Underpaid', className: 'overperforming' };
-  if (delta < -1000000) return { label: 'Overpaid', className: 'underperforming' };
-  return { label: 'Fair', className: 'meeting' };
+  if (delta <= -2000000) return { label: 'Underperforming', className: 'underperforming' };
+  if (delta < -1000000) return { label: 'Slightly Underperforming', className: 'slightly-underperforming' };
+  if (delta <= 1000000) return { label: 'Meeting Expectations', className: 'meeting' };
+  if (delta < 2000000) return { label: 'Slightly Overperforming', className: 'slightly-overperforming' };
+  return { label: 'Overperforming', className: 'overperforming' };
 }
 
 export default function Teams() {
   const { teamCode } = useParams();
   const navigate = useNavigate();
   const [players, setPlayers] = useState([]);
+  const [teamMeta, setTeamMeta] = useState(null);
   const [sortBy, setSortBy] = useState('player_name');
   const [sortDir, setSortDir] = useState('asc');
 
+  const defaultLogo = `${API}/static/team_logos/default.svg`;
+  const resolveLogoUrl = (url) => {
+    if (!url) return defaultLogo;
+    if (url.startsWith('/static/')) return `${API}${url}`;
+    return url;
+  };
+
+  function splitNameParts(name = '') {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+    const first = parts.slice(0, -1).join(' ');
+    const last = parts.length ? parts[parts.length - 1] : '';
+    return { first, last };
+  }
+
   useEffect(() => {
-    axios
-      .get(`${API}/players?team=${teamCode}`)
-      .then(res => setPlayers(res.data));
+    Promise.all([
+      axios.get(`${API}/players?team=${teamCode}`),
+      axios.get(`${API}/players/teams`).catch(() => ({ data: [] })),
+    ]).then(([playersRes, teamsRes]) => {
+      setPlayers(playersRes.data || []);
+      const found = (teamsRes.data || []).find(
+        t => t.team === teamCode || t.display_name === teamCode
+      );
+      setTeamMeta(found || null);
+    });
   }, [teamCode]);
 
   function handleSort(col) {
@@ -38,6 +62,14 @@ export default function Teams() {
 
   const sorted = [...players].sort((a, b) => {
     const av = a[sortBy], bv = b[sortBy];
+    if (sortBy === 'player_name') {
+      const an = splitNameParts(av || '');
+      const bn = splitNameParts(bv || '');
+      const lastCmp = an.last.localeCompare(bn.last);
+      const firstCmp = an.first.localeCompare(bn.first);
+      const cmp = lastCmp !== 0 ? lastCmp : firstCmp;
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
     if (typeof av === 'string') {
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     }
@@ -78,7 +110,17 @@ export default function Teams() {
         >
           ← Back
         </button>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>{teamCode}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img
+            src={resolveLogoUrl(teamMeta?.logo_url)}
+            onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
+            alt={teamMeta?.display_name || teamCode}
+            style={{ width: 40, height: 40 }}
+          />
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>
+            {teamMeta?.display_name || teamCode}
+          </h2>
+        </div>
       </div>
 
       <div className="glass" style={{ padding: '24px' }}>

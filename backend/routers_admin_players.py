@@ -30,6 +30,7 @@ def make_static_url(path: str) -> str:
 from backend.database import SessionLocal
 from backend import models
 from backend.auth import get_current_user
+from backend.config import ROSTER_SEASON_CODE
 
 router = APIRouter(prefix="/admin/players", tags=["admin-players"])
 
@@ -80,7 +81,9 @@ def normalize_text(value: str) -> str:
 
 TEAM_NAME_TO_TRICODE = {
     "Anaheim Ducks": "ANA",
-    "Arizona Coyotes": "ARI",
+    "Arizona Coyotes": "UTA",
+    "Utah Hockey Club": "UTA",
+    "Utah Mammoth": "UTA",
     "Boston Bruins": "BOS",
     "Buffalo Sabres": "BUF",
     "Calgary Flames": "CGY",
@@ -108,9 +111,44 @@ TEAM_NAME_TO_TRICODE = {
     "Tampa Bay Lightning": "TBL",
     "Toronto Maple Leafs": "TOR",
     "Vancouver Canucks": "VAN",
-    "Vegas Golden Knights": "VEG",
+    "Vegas Golden Knights": "VGK",
     "Washington Capitals": "WSH",
     "Winnipeg Jets": "WPG",
+}
+
+TRICODE_TO_TEAM_NAME = {
+    "ANA": "Anaheim Ducks",
+    "UTA": "Utah Mammoth",
+    "BOS": "Boston Bruins",
+    "BUF": "Buffalo Sabres",
+    "CGY": "Calgary Flames",
+    "CAR": "Carolina Hurricanes",
+    "CHI": "Chicago Blackhawks",
+    "COL": "Colorado Avalanche",
+    "CBJ": "Columbus Blue Jackets",
+    "DAL": "Dallas Stars",
+    "DET": "Detroit Red Wings",
+    "EDM": "Edmonton Oilers",
+    "FLA": "Florida Panthers",
+    "LAK": "Los Angeles Kings",
+    "MIN": "Minnesota Wild",
+    "MTL": "Montreal Canadiens",
+    "NSH": "Nashville Predators",
+    "NJD": "New Jersey Devils",
+    "NYI": "New York Islanders",
+    "NYR": "New York Rangers",
+    "OTT": "Ottawa Senators",
+    "PHI": "Philadelphia Flyers",
+    "PIT": "Pittsburgh Penguins",
+    "SJS": "San Jose Sharks",
+    "SEA": "Seattle Kraken",
+    "STL": "St. Louis Blues",
+    "TBL": "Tampa Bay Lightning",
+    "TOR": "Toronto Maple Leafs",
+    "VAN": "Vancouver Canucks",
+    "VGK": "Vegas Golden Knights",
+    "WSH": "Washington Capitals",
+    "WPG": "Winnipeg Jets",
 }
 
 
@@ -158,7 +196,7 @@ def build_headshot_url(player_id: str, team_abbrev: str) -> str:
 
 
 def fetch_team_roster(team_code: str) -> Any:
-    url = f"https://api-web.nhle.com/v1/roster/{urllib.parse.quote(team_code)}/current"
+    url = f"https://api-web.nhle.com/v1/roster/{urllib.parse.quote(team_code)}/{ROSTER_SEASON_CODE}"
     request = urllib.request.Request(
         url,
         headers={
@@ -171,14 +209,22 @@ def fetch_team_roster(team_code: str) -> Any:
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             data = json.load(response)
-            # Normalize different possible payload shapes
+            # Normalize season roster payloads like {'forwards': [...], 'defensemen': [...], 'goalies': [...]}.
             if isinstance(data, dict):
-                # common shapes: {'roster': [...]}, {'players': [...]}
+                flattened = []
+                for section in ("forwards", "defensemen", "goalies"):
+                    values = data.get(section)
+                    if isinstance(values, list):
+                        flattened.extend(values)
+                if flattened:
+                    return flattened
+
+                # fallback shapes: {'roster': [...]}, {'players': [...]}
                 if "roster" in data and isinstance(data["roster"], list):
                     return data["roster"]
                 if "players" in data and isinstance(data["players"], list):
                     return data["players"]
-                # some endpoints return list directly under 'data' or other keys
+                # some endpoints return list directly under other keys
                 for v in data.values():
                     if isinstance(v, list):
                         return v
@@ -232,6 +278,24 @@ def get_db():
     finally:
         db.close()
 
+
+def normalize_player_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(payload)
+
+    contracts = normalized.get("contracts")
+    if contracts is not None:
+        if isinstance(contracts, list):
+            normalized["contracts_json"] = json.dumps(contracts)
+        normalized.pop("contracts", None)
+
+    season_history = normalized.get("season_history")
+    if season_history is not None:
+        if isinstance(season_history, list):
+            normalized["season_history_json"] = json.dumps(season_history)
+        normalized.pop("season_history", None)
+
+    return normalized
+
 # ---------------------------------------------------------
 # CREATE PLAYER
 # ---------------------------------------------------------
@@ -240,6 +304,7 @@ def get_db():
 def create_player(payload: Dict[str, Any], user=Depends(admin_required), db: Session = Depends(get_db)):
     try:
         payload.pop("market_value", None)
+        payload = normalize_player_payload(payload)
         p = models.Player(**payload)
         db.add(p)
         db.commit()
@@ -260,6 +325,7 @@ def update_player(player_id: int, payload: Dict[str, Any], user=Depends(admin_re
         raise HTTPException(status_code=404, detail="Player not found")
 
     payload.pop("market_value", None)
+    payload = normalize_player_payload(payload)
 
     for k, v in payload.items():
         if hasattr(p, k):
@@ -561,6 +627,10 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
         "errors": 0,
     }
 
+    # Canonical NHL roster behavior: only players from the roster endpoint are public/active.
+    db.query(models.Player).update({models.Player.active_roster: False}, synchronize_session=False)
+    db.commit()
+
     for team_code in teams:
         try:
             roster = fetch_team_roster(team_code)
@@ -573,26 +643,32 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
         for entry in roster:
             summary["players_seen"] += 1
 
-            # Extract player id and name from common payload shapes
             player_id = None
             player_name = None
+            position_code = None
 
             if isinstance(entry, dict):
-                # common nested person object
-                person = entry.get("person") or entry.get("player") or {}
-                if isinstance(person, dict):
-                    player_id = person.get("id") or person.get("playerId") or person.get("personId")
-                    player_name = person.get("fullName") or person.get("full_name") or person.get("name")
+                player_id = entry.get("id") or entry.get("personId") or entry.get("playerId")
 
-                # some payloads include top-level fields
-                player_id = player_id or entry.get("personId") or entry.get("playerId") or entry.get("id")
-                player_name = player_name or entry.get("fullName") or entry.get("playerName") or entry.get("name")
+                first = entry.get("firstName")
+                if isinstance(first, dict):
+                    first = first.get("default") or next(iter(first.values()), "")
+                first = first or ""
+
+                last = entry.get("lastName")
+                if isinstance(last, dict):
+                    last = last.get("default") or next(iter(last.values()), "")
+                last = last or ""
+
+                player_name = (f"{first} {last}").strip() or entry.get("fullName") or entry.get("playerName") or entry.get("name")
+                position_code = entry.get("positionCode") or entry.get("position") or ""
 
             if player_id is None or player_name is None:
                 # skip malformed entry
                 continue
 
             player_id = str(player_id)
+            team_name = TRICODE_TO_TEAM_NAME.get(team_code, team_code)
 
             # Try to find existing player by nhl_player_id first
             p = db.query(models.Player).filter(models.Player.nhl_player_id == player_id).first()
@@ -602,7 +678,7 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
                 p = (
                     db.query(models.Player)
                     .filter(models.Player.player_name.ilike(f"%{player_name}%"))
-                    .filter(models.Player.team == team_code)
+                    .filter(models.Player.team == team_name)
                     .first()
                 )
 
@@ -612,8 +688,10 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
                 # update (full overhaul per request)
                 p.nhl_player_id = player_id
                 p.headshot_url = headshot
-                p.team = team_code
+                p.team = team_name
                 p.player_name = player_name
+                p.position = position_code or p.position
+                p.active_roster = True
                 db.add(p)
                 try:
                     db.commit()
@@ -625,7 +703,14 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
             else:
                 # create minimal player record
                 try:
-                    new_p = models.Player(player_name=player_name, team=team_code, nhl_player_id=player_id, headshot_url=headshot)
+                    new_p = models.Player(
+                        player_name=player_name,
+                        team=team_name,
+                        position=position_code or "",
+                        nhl_player_id=player_id,
+                        headshot_url=headshot,
+                        active_roster=True,
+                    )
                     db.add(new_p)
                     db.commit()
                     db.refresh(new_p)
@@ -652,86 +737,8 @@ def import_team_rosters(
     else:
         teams = list(TEAM_NAME_TO_TRICODE.values())
 
-    summary = {
-        "teams_processed": 0,
-        "players_seen": 0,
-        "players_created": 0,
-        "players_updated": 0,
-        "errors": 0,
-    }
-
-    for team_code in teams:
-        try:
-            roster = fetch_team_roster(team_code)
-        except HTTPException as e:
-            summary["errors"] += 1
-            continue
-
-        summary["teams_processed"] += 1
-
-        for entry in roster:
-            summary["players_seen"] += 1
-
-            # Extract player id and name from common payload shapes
-            player_id = None
-            player_name = None
-
-            if isinstance(entry, dict):
-                # common nested person object
-                person = entry.get("person") or entry.get("player") or {}
-                if isinstance(person, dict):
-                    player_id = person.get("id") or person.get("playerId") or person.get("personId")
-                    player_name = person.get("fullName") or person.get("full_name") or person.get("name")
-
-                # some payloads include top-level fields
-                player_id = player_id or entry.get("personId") or entry.get("playerId") or entry.get("id")
-                player_name = player_name or entry.get("fullName") or entry.get("playerName") or entry.get("name")
-
-            if player_id is None or player_name is None:
-                # skip malformed entry
-                continue
-
-            player_id = str(player_id)
-            normalized_name = normalize_text(player_name)
-
-            # Try to find existing player by nhl_player_id first
-            p = db.query(models.Player).filter(models.Player.nhl_player_id == player_id).first()
-
-            # If not found, try matching by normalized name + team
-            if not p:
-                p = (
-                    db.query(models.Player)
-                    .filter(models.Player.player_name.ilike(f"%{player_name}%"))
-                    .filter(models.Player.team == team_code)
-                    .first()
-                )
-
-            headshot = build_headshot_url(player_id, team_code)
-
-            if p:
-                # update
-                p.nhl_player_id = player_id
-                p.headshot_url = headshot
-                p.team = team_code
-                # update player_name to canonical name from API
-                p.player_name = player_name
-                db.add(p)
-                db.commit()
-                db.refresh(p)
-                summary["players_updated"] += 1
-            else:
-                # create minimal player record
-                try:
-                    new_p = models.Player(player_name=player_name, team=team_code, nhl_player_id=player_id, headshot_url=headshot)
-                    db.add(new_p)
-                    db.commit()
-                    db.refresh(new_p)
-                    summary["players_created"] += 1
-                except Exception:
-                    db.rollback()
-                    summary["errors"] += 1
-
+    result = perform_import_rosters(db, teams)
     return {
-        **summary,
+        **result,
         "teams_requested": teams,
     }

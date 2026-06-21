@@ -66,6 +66,11 @@ tr:hover td {
 }
 
 .overperforming {
+  color: #ec4899;
+  font-weight: 700;
+}
+
+.slightly-overperforming {
   color: #a855f7;
   font-weight: 700;
 }
@@ -77,6 +82,11 @@ tr:hover td {
 
 .underperforming {
   color: #ef4444;
+  font-weight: 700;
+}
+
+.slightly-underperforming {
+  color: #f97316;
   font-weight: 700;
 }
 

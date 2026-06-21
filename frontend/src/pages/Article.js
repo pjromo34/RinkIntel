@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import MDEditor from '@uiw/react-md-editor';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -27,7 +28,7 @@ useEffect(() => {
 
       {article.header_image && (
         <img src={article.header_image} alt={article.title}
-          style={{ width: '100%', height: '320px', objectFit: 'cover', borderRadius: '12px', marginBottom: '28px' }} />
+          style={{ width: '100%', maxHeight: '520px', height: 'auto', objectFit: 'contain', borderRadius: '12px', marginBottom: '28px' }} />
       )}
 
       <h1 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '8px' }}>{article.title}</h1>
@@ -38,8 +39,17 @@ useEffect(() => {
         By {article.author} · {new Date(article.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
       </div>
 
-      <div style={{ lineHeight: 1.8, fontSize: '1rem', color: 'rgba(255,255,255,0.85)' }}
-        dangerouslySetInnerHTML={{ __html: article.content }} />
+      <div data-color-mode="dark">
+        <MDEditor.Markdown
+          source={article.content || ''}
+          style={{
+            background: 'transparent',
+            color: 'rgba(255,255,255,0.85)',
+            lineHeight: 1.8,
+            fontSize: '1rem'
+          }}
+        />
+      </div>
     </div>
   );
 }

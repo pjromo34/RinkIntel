@@ -21,6 +21,7 @@ from threading import Thread, Event
 # Scheduler imports
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
 from backend.database import SessionLocal
+from backend.data_pipeline import run_full_pipeline
 
 # Database
 from backend.database import Base, engine
@@ -90,6 +91,11 @@ def _scheduler_loop(stop_event: Event):
         try:
             teams = list(TEAM_NAME_TO_TRICODE.values())
             perform_import_rosters(db, teams)
+            # run data pipeline immediately after rosters import
+            try:
+                run_full_pipeline()
+            except Exception:
+                pass
         except Exception:
             pass
         finally:

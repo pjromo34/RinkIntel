@@ -6,6 +6,7 @@ export default function AdminIndicator() {
 
   const logout = () => {
     localStorage.removeItem("token");
+    window.dispatchEvent(new Event("rinkintel-auth-changed"));
     window.location.href = "/admin/login";
   };
 

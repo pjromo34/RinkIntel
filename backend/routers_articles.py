@@ -18,14 +18,21 @@ def get_db():
 @router.get("")
 @router.get("/", response_model=List[Dict])
 def get_all_articles(db: Session = Depends(get_db)):
-    articles = db.query(Article).order_by(Article.created_at.desc()).all()
+    articles = (
+        db.query(Article)
+        .filter(Article.published.is_(True))
+        .order_by(Article.created_at.desc())
+        .all()
+    )
     return [
         {
             "id": a.id,
             "title": a.title,
             "description": a.description,
+            "content": a.content,
             "header_image": a.header_image,
             "author": a.author,
+            "published": a.published,
             "created_at": a.created_at,
         }
         for a in articles
@@ -36,6 +43,7 @@ def get_all_articles(db: Session = Depends(get_db)):
 def get_recent_articles(db: Session = Depends(get_db)):
     articles = (
         db.query(Article)
+        .filter(Article.published.is_(True))
         .order_by(Article.created_at.desc())
         .limit(5)
         .all()
@@ -45,8 +53,10 @@ def get_recent_articles(db: Session = Depends(get_db)):
             "id": a.id,
             "title": a.title,
             "description": a.description,
+            "content": a.content,
             "header_image": a.header_image,
             "author": a.author,
+            "published": a.published,
             "created_at": a.created_at,
         }
         for a in articles
@@ -55,14 +65,20 @@ def get_recent_articles(db: Session = Depends(get_db)):
 @router.get("/{article_id}")
 @router.get("/{article_id}/", response_model=Dict)
 def get_article(article_id: int, db: Session = Depends(get_db)):
-    article = db.query(Article).filter(Article.id == article_id).first()
+    article = (
+        db.query(Article)
+        .filter(Article.id == article_id, Article.published.is_(True))
+        .first()
+    )
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     return {
         "id": article.id,
         "title": article.title,
         "description": article.description,
+        "content": article.content,
         "header_image": article.header_image,
         "author": article.author,
+        "published": article.published,
         "created_at": article.created_at,
     }
