@@ -9,6 +9,27 @@ function formatMoney(val) {
   return '$' + Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function isGoalie(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  return normalized === 'G' || normalized === 'GOALIE' || normalized === 'GOALTENDER';
+}
+
+function formatPosition(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  if (normalized === 'L') return 'LW';
+  if (normalized === 'R') return 'RW';
+  return normalized || 'N/A';
+}
+
+function formatMarketValue(value) {
+  return value === null || value === undefined ? '—' : formatMoney(value);
+}
+
+function formatDifference(value) {
+  const amount = Number(value) || 0;
+  return amount >= 0 ? `+${formatMoney(amount)}` : `-${formatMoney(Math.abs(amount))}`;
+}
+
 function getVerdict(actual, market) {
   const delta = market - actual;
   if (delta <= -2000000) return { label: 'Underperforming', className: 'underperforming' };
@@ -66,9 +87,12 @@ function PlayerValueChart({ data }) {
   const chartWidth = width - margin.left - margin.right;
   const chartHeight = height - margin.top - margin.bottom;
   const yMin = 0;
-  const yMax = 18000000;
+  const maxActualSalary = data.reduce((maxValue, row) => {
+    return Math.max(maxValue, Number(row?.actualContract) || 0);
+  }, 0);
+  const yMax = maxActualSalary > 14000000 ? 20000000 : 14000000;
 
-  const yTicks = [0, 3000000, 6000000, 9000000, 12000000, 15000000, 18000000];
+  const yTicks = Array.from({ length: yMax / 2000000 + 1 }, (_, index) => index * 2000000);
 
   const xForIndex = (index, count) => {
     if (count <= 1) return margin.left + chartWidth / 2;
@@ -76,7 +100,7 @@ function PlayerValueChart({ data }) {
   };
 
   const yForValue = (value) => {
-    const clamped = Math.max(yMin, Math.min(yMax, Number(value) || 0));
+    const clamped = Math.max(yMin, Number(value) || 0);
     const normalized = (clamped - yMin) / (yMax - yMin);
     return margin.top + chartHeight - normalized * chartHeight;
   };
@@ -131,7 +155,8 @@ function PlayerValueChart({ data }) {
           width: '100%',
           height: '340px',
           display: 'block',
-          background: 'transparent'
+          background: 'transparent',
+          overflow: 'visible'
         }}
       >
         {yTicks.map(tick => {
@@ -283,13 +308,14 @@ export default function PlayerProfile() {
 
   if (!player) return <div style={{ padding: '40px' }}>Loading...</div>;
 
-  const verdict = getVerdict(player.aav || 0, player.market_value || 0);
+  const goalie = isGoalie(player.position);
+  const verdict = goalie ? null : getVerdict(player.aav || 0, player.market_value || 0);
   const bonusTracker = computePerformanceBonusTracker(player, allPlayers, player.season);
   const historyRows = Array.isArray(player.value_history)
     ? player.value_history
         .map(row => ({
           season: row?.season,
-          marketValue: Number(row?.market_value) || 0,
+          marketValue: row?.market_value === null || row?.market_value === undefined ? null : Number(row.market_value),
           actualContract: Number(row?.aav) || 0
         }))
         .filter(row => row.season)
@@ -305,7 +331,7 @@ export default function PlayerProfile() {
   if (!rowsBySeason.has(currentSeason)) {
     rowsBySeason.set(currentSeason, {
       season: currentSeason,
-      marketValue: Number(player.market_value) || 0,
+      marketValue: player.market_value === null || player.market_value === undefined ? null : Number(player.market_value),
       actualContract: currentAav
     });
   }
@@ -318,13 +344,18 @@ export default function PlayerProfile() {
     }
     rowsBySeason.set(season, {
       season,
-      marketValue: 0,
+      marketValue: null,
       actualContract: aav,
     });
   });
 
   const chartRows = Array.from(rowsBySeason.values())
     .sort((a, b) => parseSeasonStart(a.season) - parseSeasonStart(b.season));
+  const playerNumber = player.number === null || player.number === undefined || player.number === '' ? 'N/A' : player.number;
+  const playerPosition = formatPosition(player.position);
+  const valueDifference = goalie || player.market_value === null || player.market_value === undefined
+    ? null
+    : (Number(player.market_value) || 0) - (Number(currentAav) || 0);
 
   return (
     <div style={{ padding: '32px 40px' }}>
@@ -378,7 +409,7 @@ export default function PlayerProfile() {
                   height: 100,
                   borderRadius: '50%',
                   objectFit: 'cover',
-                  border: '3px solid rgba(255,255,255,0.2)'
+                  border: '3px solid #ffffff'
                 }}
               />
             ) : (
@@ -417,18 +448,36 @@ export default function PlayerProfile() {
                   src={resolveLogoUrl(teamLogos[player.team])}
                   onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
                   alt={player.team}
-                  style={{ width: 22, height: 22 }}
+                  style={{ width: 38, height: 38 }}
                 />
                 <span>{player.team}</span>
               </div>
 
               <div
                 style={{
-                  color: 'rgba(255,255,255,0.6)',
-                  marginTop: '4px'
+                  marginTop: '8px',
+                  display: 'flex',
+                  alignItems: 'center'
                 }}
               >
-                {player.position}
+                <div
+                  style={{
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.9)',
+                    borderRadius: '8px',
+                    padding: '4px 0',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: '#ffffff',
+                    letterSpacing: '0.3px'
+                  }}
+                >
+                  <span style={{ padding: '0 12px' }}>{playerPosition}</span>
+                  <span style={{ width: '1px', height: '18px', background: 'rgba(255,255,255,0.9)' }} />
+                  <span style={{ padding: '0 12px' }}>{playerNumber}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -450,7 +499,7 @@ export default function PlayerProfile() {
               <div
                 key={stat.label}
                 className="glass"
-                style={{ padding: '16px', textAlign: 'center' }}
+                style={{ padding: '16px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.9)' }}
               >
                 <div style={{ fontSize: '1.8rem', fontWeight: 800 }}>
                   {stat.value}
@@ -475,7 +524,7 @@ export default function PlayerProfile() {
               gap: '16px'
             }}
           >
-            <div className="glass" style={{ padding: '20px' }}>
+            <div className="glass" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.9)' }}>
               <div
                 style={{
                   fontSize: '0.8rem',
@@ -490,7 +539,7 @@ export default function PlayerProfile() {
               </div>
             </div>
 
-            <div className="glass" style={{ padding: '20px' }}>
+            <div className="glass" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.9)' }}>
               <div
                 style={{
                   fontSize: '0.8rem',
@@ -501,11 +550,11 @@ export default function PlayerProfile() {
                 MARKET VALUE
               </div>
               <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                {formatMoney(player.market_value || 0)}
+                {formatMarketValue(player.market_value)}
               </div>
             </div>
 
-            <div className="glass" style={{ padding: '20px' }}>
+            <div className="glass" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.9)' }}>
               <div
                 style={{
                   fontSize: '0.8rem',
@@ -513,18 +562,30 @@ export default function PlayerProfile() {
                   marginBottom: '8px'
                 }}
               >
-                CONTRACT YEARS REMAINING
+                DIFFERENCE
               </div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                {Math.max(0, Math.floor(Number(player.contract_years_remaining) || 0))}
+              <div
+                style={{
+                  fontSize: '1.4rem',
+                  fontWeight: 700,
+                  color: valueDifference === null ? 'rgba(255,255,255,0.65)' : (valueDifference >= 0 ? '#22c55e' : '#ef4444')
+                }}
+              >
+                {valueDifference === null ? '—' : formatDifference(valueDifference)}
               </div>
             </div>
           </div>
 
           <div style={{ marginTop: '20px', textAlign: 'center' }}>
-            <span className={verdict.className} style={{ fontSize: '1.2rem' }}>
-              {verdict.label}
-            </span>
+            {verdict ? (
+              <span className={verdict.className} style={{ fontSize: '1.2rem' }}>
+                {verdict.label}
+              </span>
+            ) : (
+              <span style={{ fontSize: '1.2rem', color: 'rgba(255,255,255,0.6)' }}>
+                No market value for goalies
+              </span>
+            )}
           </div>
 
           <PlayerValueChart data={chartRows} />
@@ -534,11 +595,11 @@ export default function PlayerProfile() {
               <h3 style={{ marginBottom: '12px', fontSize: '1.05rem' }}>Performance Bonus Tracker</h3>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '12px' }}>
-                <div className="glass" style={{ padding: '14px' }}>
+                <div className="glass" style={{ padding: '14px', border: '1px solid rgba(255,255,255,0.9)' }}>
                   <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>BONUS ELIGIBLE</div>
                   <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{formatMoney(bonusTracker.bonusTotal)}</div>
                 </div>
-                <div className="glass" style={{ padding: '14px' }}>
+                <div className="glass" style={{ padding: '14px', border: '1px solid rgba(255,255,255,0.9)' }}>
                   <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>BONUS EARNED</div>
                   <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{formatMoney(bonusTracker.earnedTotal)}</div>
                   {bonusTracker.maxedOut && <div style={{ fontSize: '0.78rem', color: '#22c55e', marginTop: '2px' }}>maxed out</div>}
@@ -546,10 +607,10 @@ export default function PlayerProfile() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div className="glass" style={{ padding: '14px' }}>
+                <div className="glass" style={{ padding: '14px', border: '1px solid rgba(255,255,255,0.9)' }}>
                   <div style={{ fontWeight: 700, marginBottom: '8px' }}>A Bonuses (up to {formatMoney(bonusTracker.aPool)})</div>
                   <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.68)', marginBottom: '8px' }}>
-                    A bonuses are worth $250,000 each, to a maximum of $1,000,000.
+                    A bonuses are paid in $250,000 increments from the first $1,000,000 of total bonus incentives. If less than $250,000 remains in the A pool, the player can still earn that partial amount.
                   </div>
                   {bonusTracker.aItems.map((item) => {
                     const pct = Math.max(0, Math.min(1, item.progress || 0));
@@ -573,10 +634,10 @@ export default function PlayerProfile() {
                   )}
                 </div>
 
-                <div className="glass" style={{ padding: '14px' }}>
+                <div className="glass" style={{ padding: '14px', border: '1px solid rgba(255,255,255,0.9)' }}>
                   <div style={{ fontWeight: 700, marginBottom: '8px' }}>B Bonuses (up to {formatMoney(bonusTracker.bPool)})</div>
                   <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.68)', marginBottom: '8px' }}>
-                    B bonuses are worth a maximum of $2.5 million. Only one B bonus can be achieved.
+                    B bonuses use the remaining bonus incentive amount after the A pool, up to $2,500,000. Only one B bonus can be achieved.
                   </div>
                   {bonusTracker.bItems.map((item) => {
                     const pct = Math.max(0, Math.min(1, item.progress || 0));

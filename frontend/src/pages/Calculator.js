@@ -7,6 +7,18 @@ function formatMoney(val) {
   return '$' + Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function isGoalie(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  return normalized === 'G' || normalized === 'GOALIE' || normalized === 'GOALTENDER';
+}
+
+function formatPosition(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  if (normalized === 'L') return 'LW';
+  if (normalized === 'R') return 'RW';
+  return normalized || 'N/A';
+}
+
 export default function Calculator() {
   const MODEL_DEFAULTS = {
     primary_assists: 0,
@@ -63,6 +75,7 @@ export default function Calculator() {
 
   // FIXED: use p.name instead of p.player_name
   const filtered = players
+    .filter(p => !isGoalie(p.position))
     .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
     .slice(0, 8);
 
@@ -109,7 +122,7 @@ export default function Calculator() {
   }
 
   async function handleSubmit() {
-    if (!selected) return;
+    if (!selected || isGoalie(selected.position)) return;
     setLoading(true);
 
     try {
@@ -187,6 +200,9 @@ export default function Calculator() {
       <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.68)', marginBottom: '20px', maxWidth: '760px' }}>
         Use our performance calculator to determine what a player must do to meet expectations on their contract. Create a hypothetical statline to obtain a contract value.
       </p>
+      <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginBottom: '20px', maxWidth: '760px' }}>
+        Goalies are excluded from the salary calculator.
+      </p>
 
       <div style={{ display: 'flex', gap: '32px', alignItems: 'flex-start' }}>
         <div className="glass" style={{ flex: 1, padding: '28px' }}>
@@ -247,7 +263,7 @@ export default function Calculator() {
                         alt={p.team}
                         style={{ width: 16, height: 16 }}
                       />
-                      <span>{p.team} · {p.position}</span>
+                      <span>{p.team} · {formatPosition(p.position)}</span>
                     </span>
                   </div>
                 ))}
@@ -286,7 +302,7 @@ export default function Calculator() {
                   />
                   <span>{selected.team}</span>
                   <span>·</span>
-                  <span>{selected.position}</span>
+                  <span>{formatPosition(selected.position)}</span>
                 </div>
                 <div style={{ color: '#ffd700', fontWeight: 600, marginTop: '4px' }}>
                   Current AAV: {formatMoney(selected.aav || 0)}

@@ -7,6 +7,8 @@ from backend.database import SessionLocal
 from backend.models import Player
 from typing import List, Dict
 import json
+import urllib.request
+from functools import lru_cache
 
 from backend.config import CURRENT_SEASON
 
@@ -80,8 +82,58 @@ def season_label_from_start(start_year: int) -> str:
     return f"{start_year}-{str((start_year + 1) % 100).zfill(2)}"
 
 
+def is_goalie_position(position: str | None) -> bool:
+    pos = str(position or "").strip().upper()
+    return pos in {"G", "GK", "GOALIE", "GOALTENDER"}
+
+
+def optional_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=2048)
+def fetch_player_jersey_number(nhl_player_id: str | None):
+    if not nhl_player_id:
+        return None
+
+    url = f"https://api-web.nhle.com/v1/player/{nhl_player_id}/landing"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            "Referer": "https://www.nhl.com/",
+            "Origin": "https://www.nhl.com",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            payload = json.load(response)
+    except Exception:
+        return None
+
+    raw = payload.get("sweaterNumber")
+    if raw is None:
+        raw = payload.get("jerseyNumber")
+    if raw is None:
+        return None
+
+    value = str(raw).strip()
+    if not value:
+        return None
+    return value
+
+
 def expand_contracts(contracts: list) -> Dict[str, float]:
-    season_to_aav: Dict[str, float] = {}
+    # For overlapping contract entries, prefer the contract with the latest
+    # start season for a given target season.
+    season_to_contract: Dict[str, Dict[str, float]] = {}
     for row in contracts:
         if not isinstance(row, dict):
             continue
@@ -94,14 +146,81 @@ def expand_contracts(contracts: list) -> Dict[str, float]:
         if start <= 0 or years <= 0:
             continue
         for i in range(years):
-            season_to_aav[season_label_from_start(start + i)] = aav
-    return season_to_aav
+            season_key = season_label_from_start(start + i)
+            existing = season_to_contract.get(season_key)
+            if existing is None or start >= int(existing["start"]):
+                season_to_contract[season_key] = {"start": float(start), "aav": aav}
+
+    return {season: float(meta["aav"]) for season, meta in season_to_contract.items()}
+
+
+def contracts_from_map(contract_map: Dict[str, float]) -> List[Dict]:
+    if not contract_map:
+        return []
+
+    years = sorted(
+        [season_start(season) for season in contract_map.keys() if season_start(season) > 0]
+    )
+    if not years:
+        return []
+
+    rows: List[Dict] = []
+    start_year = years[0]
+    prev_year = years[0]
+    current_aav = float(contract_map.get(season_label_from_start(start_year), 0) or 0)
+
+    for year in years[1:]:
+        year_aav = float(contract_map.get(season_label_from_start(year), 0) or 0)
+        if year == prev_year + 1 and year_aav == current_aav:
+            prev_year = year
+            continue
+
+        rows.append(
+            {
+                "start_season": season_label_from_start(start_year),
+                "years": prev_year - start_year + 1,
+                "aav": current_aav,
+            }
+        )
+        start_year = year
+        prev_year = year
+        current_aav = year_aav
+
+    rows.append(
+        {
+            "start_season": season_label_from_start(start_year),
+            "years": prev_year - start_year + 1,
+            "aav": current_aav,
+        }
+    )
+    return rows
+
+
+def contracts_for_response(contracts: list, contract_map: Dict[str, float]) -> List[Dict]:
+    if contracts:
+        normalized = [row for row in contracts if isinstance(row, dict)]
+        normalized.sort(key=lambda row: season_start(row.get("start_season") or row.get("season")))
+        return normalized
+    return contracts_from_map(contract_map)
 
 
 def build_player_payload(p: Player) -> Dict:
     season_history = parse_json_list(getattr(p, "season_history_json", None))
     contracts = parse_json_list(getattr(p, "contracts_json", None))
     contract_map = expand_contracts(contracts)
+
+    # Fallback for players edited with top-level contract fields but without
+    # a populated contracts_json timeline.
+    remaining_years = int(p.contract_years_remaining or 0)
+    current_start = season_start(CURRENT_SEASON)
+    explicit_start = season_start(p.contract_start_season)
+    fallback_start = explicit_start if explicit_start >= current_start else current_start
+    fallback_aav = float(p.aav or 0)
+
+    if remaining_years > 0 and fallback_aav > 0:
+        for i in range(remaining_years):
+            season_key = season_label_from_start(fallback_start + i)
+            contract_map.setdefault(season_key, fallback_aav)
 
     current_snapshot = None
     for row in season_history:
@@ -120,7 +239,9 @@ def build_player_payload(p: Player) -> Dict:
     hits = float((current_snapshot or {}).get("hits") or getattr(p, "hits", 0) or 0)
     takeaways = float((current_snapshot or {}).get("takeaways") or getattr(p, "takeaways", 0) or 0)
     giveaways = float((current_snapshot or {}).get("giveaways") or getattr(p, "giveaways", 0) or 0)
-    market_value = float((current_snapshot or {}).get("market_value") or p.market_value or 0)
+    market_value = None if is_goalie_position(p.position) else optional_float((current_snapshot or {}).get("market_value"))
+    if market_value is None and not is_goalie_position(p.position):
+        market_value = optional_float(p.market_value)
     current_aav = float(contract_map.get(CURRENT_SEASON, p.aav or 0))
 
     value_history = []
@@ -135,7 +256,7 @@ def build_player_payload(p: Player) -> Dict:
         value_history.append(
             {
                 "season": season,
-                "market_value": float(row.get("market_value") or 0),
+                "market_value": None if is_goalie_position(p.position) else optional_float(row.get("market_value")),
                 "aav": float(contract_map.get(season, row.get("aav") or 0)),
             }
         )
@@ -148,14 +269,19 @@ def build_player_payload(p: Player) -> Dict:
     contract_years_remaining = int(p.contract_years_remaining or 0)
     if contracts:
         cur_start = season_start(CURRENT_SEASON)
+        active_contracts = []
         for row in contracts:
             if not isinstance(row, dict):
                 continue
             start = season_start(row.get("start_season") or row.get("season"))
-            years = int(row.get("years") or 0)
+            years = int(row.get("years") or row.get("length") or 0)
             if start and years and start <= cur_start <= (start + years - 1):
-                contract_years_remaining = (start + years - 1) - cur_start + 1
-                break
+                active_contracts.append((start, years))
+
+        if active_contracts:
+            # Mirror expand_contracts precedence for overlapping deals.
+            start, years = max(active_contracts, key=lambda item: item[0])
+            contract_years_remaining = (start + years - 1) - cur_start + 1
 
     return {
         "id": p.id,
@@ -179,7 +305,7 @@ def build_player_payload(p: Player) -> Dict:
         "aav": current_aav,
         "contract_years_remaining": contract_years_remaining,
         "contract_start_season": p.contract_start_season,
-        "contracts": contracts,
+        "contracts": contracts_for_response(contracts, contract_map),
         "value_history": value_history,
         "headshot_url": p.headshot_url,
     }
@@ -261,4 +387,6 @@ def get_player_by_name(name: str, db: Session = Depends(get_db)):
     if not p:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    return build_player_payload(p)
+    payload = build_player_payload(p)
+    payload["number"] = fetch_player_jersey_number(str(p.nhl_player_id) if p.nhl_player_id else None)
+    return payload

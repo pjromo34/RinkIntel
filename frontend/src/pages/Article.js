@@ -26,29 +26,31 @@ useEffect(() => {
         padding: '8px 16px', borderRadius: '8px', fontWeight: 600, marginBottom: '24px'
       }}>← Back</button>
 
-      {article.header_image && (
-        <img src={article.header_image} alt={article.title}
-          style={{ width: '100%', maxHeight: '520px', height: 'auto', objectFit: 'contain', borderRadius: '12px', marginBottom: '28px' }} />
-      )}
+      <div className="glass" style={{ padding: '24px' }}>
+        {article.header_image && (
+          <img src={article.header_image} alt={article.title}
+            style={{ width: '100%', maxHeight: '520px', height: 'auto', objectFit: 'contain', borderRadius: '12px', marginBottom: '28px' }} />
+        )}
 
-      <h1 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '8px' }}>{article.title}</h1>
-      {article.description && (
-        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.05rem', marginBottom: '8px' }}>{article.description}</p>
-      )}
-      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginBottom: '32px' }}>
-        By {article.author} · {new Date(article.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-      </div>
+        <h1 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '8px', marginTop: 0 }}>{article.title}</h1>
+        {article.description && (
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.05rem', marginBottom: '8px' }}>{article.description}</p>
+        )}
+        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem', marginBottom: '32px' }}>
+          By {article.author} · {new Date(article.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </div>
 
-      <div data-color-mode="dark">
-        <MDEditor.Markdown
-          source={article.content || ''}
-          style={{
-            background: 'transparent',
-            color: 'rgba(255,255,255,0.85)',
-            lineHeight: 1.8,
-            fontSize: '1rem'
-          }}
-        />
+        <div data-color-mode="dark">
+          <MDEditor.Markdown
+            source={article.content || ''}
+            style={{
+              background: 'transparent',
+              color: 'rgba(255,255,255,0.85)',
+              lineHeight: 1.8,
+              fontSize: '1rem'
+            }}
+          />
+        </div>
       </div>
     </div>
   );

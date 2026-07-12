@@ -17,7 +17,9 @@ useEffect(() => {
 
   return (
     <div style={{ padding: '32px 40px', maxWidth: '900px', margin: '0 auto' }}>
-      <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '32px' }}>Articles</h2>
+      <div className="glass" style={{ padding: '16px 20px', marginBottom: '24px' }}>
+        <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0 }}>Articles</h2>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {articles.map(a => (
           <div key={a.id} onClick={() => navigate(`/news/${a.id}`)}

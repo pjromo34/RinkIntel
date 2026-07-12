@@ -17,13 +17,33 @@ function normalizePosition(position) {
 function activeContract(player, season) {
   const contracts = Array.isArray(player?.contracts) ? player.contracts : [];
   const currentStart = seasonStart(season);
+  let active = null;
   for (const c of contracts) {
     const start = seasonStart(c?.start_season || c?.season);
     const years = Number(c?.years) || 0;
     if (!start || !years) continue;
-    if (start <= currentStart && currentStart <= start + years - 1) return c;
+    if (start <= currentStart && currentStart <= start + years - 1) {
+      if (!active || start >= seasonStart(active?.start_season || active?.season)) {
+        active = c;
+      }
+    }
   }
-  return null;
+  return active;
+}
+
+function seasonBonusAmount(contract, season) {
+  if (!contract) return 0;
+
+  const start = seasonStart(contract?.start_season || contract?.season);
+  const current = seasonStart(season);
+  const yearIndex = start > 0 && current >= start ? current - start : -1;
+  const yearly = Array.isArray(contract?.yearly_bonus_amounts) ? contract.yearly_bonus_amounts : null;
+
+  if (yearly && yearIndex >= 0 && yearIndex < yearly.length) {
+    return Math.max(0, Number(yearly[yearIndex]) || 0);
+  }
+
+  return Math.max(0, Number(contract?.bonus_amount) || 0);
 }
 
 function progressThreshold(current, needed) {
@@ -142,7 +162,8 @@ export function computePerformanceBonusTracker(player, allPlayers, currentSeason
   const contract = activeContract(player, season);
   if (!contract || !contract.bonus_eligible) return null;
 
-  const bonusTotal = Number(contract.bonus_amount) || 0;
+  const bonusTotal = seasonBonusAmount(contract, season);
+  if (bonusTotal <= 0) return null;
   const aPool = Math.min(1000000, bonusTotal);
   const bPool = Math.min(2500000, Math.max(0, bonusTotal - aPool));
 
@@ -177,16 +198,7 @@ export function computePerformanceBonusTracker(player, allPlayers, currentSeason
       'All-Star Selection',
       'All-Star MVP',
     ],
-    G: [
-      '1,800 minutes played',
-      'GAA threshold vs league median (25+ GP)',
-      'Save % threshold vs league median (25+ GP)',
-      '20 wins',
-      'Shutouts threshold vs league median (25+ GP)',
-      'End-of-season All Rookie Team',
-      'All-Star Selection',
-      'All-Star MVP',
-    ],
+    G: [],
   };
 
   const unsupportedB = [
@@ -215,14 +227,13 @@ export function computePerformanceBonusTracker(player, allPlayers, currentSeason
     aItems: a,
     bItems: b,
     unsupportedA: unsupportedAByPos[positionType] || [],
-    unsupportedB,
+    unsupportedB: positionType === 'G' ? [] : unsupportedB,
     closest,
   };
 }
 
 export function bonusProgressColor(progress) {
-  if (progress >= 1) return '#22c55e';
-  if (progress >= 0.85) return '#3b82f6';
-  if (progress >= 0.5) return '#eab308';
-  return '#ef4444';
+  const clamped = Math.max(0, Math.min(1, Number(progress) || 0));
+  const hue = 0 + clamped * 120;
+  return `hsl(${hue}, 78%, 54%)`;
 }

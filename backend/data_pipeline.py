@@ -239,6 +239,39 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
     fwd_model = models_map['fwd']
     def_model = models_map['def']
 
+    def combine_matched_rows(rows: pd.DataFrame) -> pd.Series:
+        if rows.empty:
+            return pd.Series({c: None for c in skaters_df_copy.columns})
+        if len(rows) == 1:
+            return rows.iloc[0]
+
+        combined = rows.iloc[0].copy()
+        sum_cols = [
+            'I_F_points', 'points', 'I_F_primaryAssists', 'I_F_secondaryAssists',
+            'I_F_goals', 'goals', 'I_F_highDangerShots', 'I_F_highDangerGoals',
+            'I_F_hits', 'I_F_takeaways', 'I_F_giveaways', 'I_F_dZoneGiveaways',
+            'I_F_blockedShotAttempts', 'OnIce_A_xGoals', 'OnIce_A_goals',
+            'games_played', 'games', 'icetime', 'timeOnIce'
+        ]
+        for col in sum_cols:
+            if col in rows.columns:
+                combined[col] = pd.to_numeric(rows[col], errors='coerce').fillna(0).sum()
+
+        weight_col = 'icetime' if 'icetime' in rows.columns else ('timeOnIce' if 'timeOnIce' in rows.columns else None)
+        for col in ['onIce_xGoalsPercentage', 'onIce_corsiPercentage']:
+            if col not in rows.columns:
+                continue
+            values = pd.to_numeric(rows[col], errors='coerce')
+            if weight_col and weight_col in rows.columns:
+                weights = pd.to_numeric(rows[weight_col], errors='coerce').fillna(0)
+                valid = values.notna() & weights.gt(0)
+                if valid.any():
+                    combined[col] = (values[valid] * weights[valid]).sum() / weights[valid].sum()
+                    continue
+            combined[col] = values.dropna().mean() if values.notna().any() else None
+
+        return combined
+
     rows = []
     # Prepare lookup maps
     skaters_df_copy = skaters_df.copy()
@@ -263,6 +296,11 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
             return default
         return value
     xg_map = {(r['shooterName'], r['teamCode']): r['xG_all_situations'] for _, r in xg_agg.iterrows()}
+    xg_name_map = xg_agg.groupby('shooterName', dropna=False)['xG_all_situations'].sum().to_dict()
+
+    def is_goalie_position(position: Any) -> bool:
+        pos = str(position or '').strip().upper()
+        return pos in {'G', 'GK', 'GOALIE', 'GOALTENDER'}
 
     for bio in bios:
         name = bio.get('name')
@@ -271,27 +309,37 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
         birth = bio.get('birthdate')
         pos = bio.get('position') or ''
 
-        # match skater row by name and team
-        matched = skaters_df_copy[skaters_df_copy[name_col] == name]
-        if team and team_col and not matched.empty:
-            matched = matched[matched[team_col] == team]
+        # Prefer an exact name + current team match, but if a player was traded
+        # midseason and the stats feed still attributes production to the old team,
+        # fall back to all same-name rows aggregated across teams.
+        matched = pd.DataFrame()
+        exact_matches = skaters_df_copy[skaters_df_copy[name_col] == name]
+        if not exact_matches.empty:
+            if team and team_col:
+                team_matches = exact_matches[exact_matches[team_col] == team]
+                matched = team_matches if not team_matches.empty else exact_matches
+            else:
+                matched = exact_matches
 
         if matched.empty:
-            # Fallback for punctuation/diacritics differences (e.g. apostrophes, accents).
             normalized_name = _normalize_name(name)
             if normalized_name:
-                matched = skaters_df_copy[skaters_df_copy['_normalized_name'] == normalized_name]
-                if team and team_col and not matched.empty:
-                    matched = matched[matched[team_col] == team]
+                normalized_matches = skaters_df_copy[skaters_df_copy['_normalized_name'] == normalized_name]
+                if not normalized_matches.empty:
+                    if team and team_col:
+                        team_matches = normalized_matches[normalized_matches[team_col] == team]
+                        matched = team_matches if not team_matches.empty else normalized_matches
+                    else:
+                        matched = normalized_matches
 
         if matched.empty:
             # flag missing — still create minimal row
             sk = pd.Series({c: None for c in skaters_df_copy.columns})
         else:
-            sk = matched.iloc[0]
+            sk = combine_matched_rows(matched)
 
         # compute xg
-        xg_val = xg_map.get((name, team)) or xg_map.get((name, sk.get('teamCode')))
+        xg_val = xg_map.get((name, team)) or xg_map.get((name, sk.get('teamCode'))) or xg_name_map.get(name)
 
         icetime = sk.get('icetime') if 'icetime' in sk.index else sk.get('timeOnIce', None)
         points = sk.get('points') if 'points' in sk.index else sk.get('I_F_points', None)
@@ -328,33 +376,34 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
             'position': 3 if (pos == 'D' or pos == 'defenseman') else (0 if pos == 'C' else (1 if pos == 'L' else (2 if pos == 'R' else 0)))
         }
 
-        # Select model
-        model = def_model if feature['position'] == 3 else fwd_model
+        capPercent = None
+        market_value = None
+        if not is_goalie_position(pos):
+            model = def_model if feature['position'] == 3 else fwd_model
 
-        # Create DataFrame row in the exact order required
-        X_row = pd.DataFrame([[
-            feature['I_F_points'], feature['I_F_primaryAssists'], feature['I_F_secondaryAssists'], feature['I_F_goals'],
-            feature['I_F_highDangerShots'], feature['I_F_highDangerGoals'], feature['I_F_hits'], feature['I_F_takeaways'],
-            feature['points_per_60'], feature['I_F_giveaways'], feature['I_F_dZoneGiveaways'], feature['I_F_blockedShotAttempts'],
-            feature['OnIce_A_xGoals'], feature['OnIce_A_goals'], feature['games_played'], feature['icetime'],
-            feature['onIce_xGoalsPercentage'], feature['onIce_corsiPercentage'], feature['xG_all_situations'],
-            feature['Age at Signing'], feature['position']
-        ]], columns=[
-            'I_F_points','I_F_primaryAssists','I_F_secondaryAssists','I_F_goals',
-            'I_F_highDangerShots','I_F_highDangerGoals','I_F_hits','I_F_takeaways',
-            'points_per_60','I_F_giveaways','I_F_dZoneGiveaways','I_F_blockedShotAttempts',
-            'OnIce_A_xGoals','OnIce_A_goals','games_played','icetime',
-            'onIce_xGoalsPercentage','onIce_corsiPercentage','xG_all_situations',
-            'Age at Signing','position'
-        ])
+            X_row = pd.DataFrame([[
+                feature['I_F_points'], feature['I_F_primaryAssists'], feature['I_F_secondaryAssists'], feature['I_F_goals'],
+                feature['I_F_highDangerShots'], feature['I_F_highDangerGoals'], feature['I_F_hits'], feature['I_F_takeaways'],
+                feature['points_per_60'], feature['I_F_giveaways'], feature['I_F_dZoneGiveaways'], feature['I_F_blockedShotAttempts'],
+                feature['OnIce_A_xGoals'], feature['OnIce_A_goals'], feature['games_played'], feature['icetime'],
+                feature['onIce_xGoalsPercentage'], feature['onIce_corsiPercentage'], feature['xG_all_situations'],
+                feature['Age at Signing'], feature['position']
+            ]], columns=[
+                'I_F_points','I_F_primaryAssists','I_F_secondaryAssists','I_F_goals',
+                'I_F_highDangerShots','I_F_highDangerGoals','I_F_hits','I_F_takeaways',
+                'points_per_60','I_F_giveaways','I_F_dZoneGiveaways','I_F_blockedShotAttempts',
+                'OnIce_A_xGoals','OnIce_A_goals','games_played','icetime',
+                'onIce_xGoalsPercentage','onIce_corsiPercentage','xG_all_situations',
+                'Age at Signing','position'
+            ])
 
-        try:
-            capPercent = float(model.predict(X_row)[0])
-        except Exception:
-            capPercent = 0.0
+            try:
+                capPercent = float(model.predict(X_row)[0])
+            except Exception:
+                capPercent = 0.0
 
-        salary_cap = SALARY_CAP_BY_SEASON.get(CURRENT_SEASON)
-        market_value = capPercent * salary_cap if salary_cap else None
+            salary_cap = SALARY_CAP_BY_SEASON.get(CURRENT_SEASON)
+            market_value = capPercent * salary_cap if salary_cap else None
 
         rows.append({
             'player_name': name,
@@ -465,7 +514,7 @@ def update_existing_players_from_predictions(df: pd.DataFrame):
                 'hits': float(r.get('hits') or 0),
                 'takeaways': float(r.get('takeaways') or 0),
                 'giveaways': float(r.get('giveaways') or 0),
-                'market_value': float(r.get('market_value') or 0),
+                'market_value': None if r.get('market_value') is None else float(r.get('market_value') or 0),
             }
             replaced = False
             for i, row in enumerate(season_history):
@@ -480,8 +529,7 @@ def update_existing_players_from_predictions(df: pd.DataFrame):
             # Only update computed/stat fields; preserve team/name as-is.
             p.xg_all_situations = float(r.get('xG_all_situations') or 0)
             mv = r.get('market_value')
-            if mv is not None:
-                p.market_value = float(mv)
+            p.market_value = None if mv is None else float(mv)
             if r.get('goals') is not None:
                 p.goals = int(r.get('goals') or 0)
             if r.get('assists') is not None:

@@ -21,6 +21,59 @@ const TEAMS = [
 
 const POSITIONS = ["W", "C", "D"];
 
+function seasonStart(season) {
+  const match = String(season || "").match(/(\d{4})/);
+  return match ? Number(match[1]) : 0;
+}
+
+function seasonLabel(startYear) {
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
+function nextContractStartSeason(contracts, fallbackSeason) {
+  if (!Array.isArray(contracts) || contracts.length === 0) {
+    return fallbackSeason;
+  }
+
+  const latestEndYear = contracts.reduce((maxEndYear, contract) => {
+    const start = seasonStart(contract?.start_season || contract?.season);
+    const years = Math.max(1, Number(contract?.years) || 1);
+    if (!start) return maxEndYear;
+    return Math.max(maxEndYear, start + years - 1);
+  }, 0);
+
+  if (!latestEndYear) {
+    return fallbackSeason;
+  }
+
+  return seasonLabel(latestEndYear + 1);
+}
+
+function normalizeYearlyBonuses(contract) {
+  const years = Math.max(1, Number(contract?.years) || 1);
+  const fallback = Number(contract?.bonus_amount) || 0;
+  const fromContract = Array.isArray(contract?.yearly_bonus_amounts)
+    ? contract.yearly_bonus_amounts
+    : [];
+
+  const normalized = [];
+  for (let i = 0; i < years; i += 1) {
+    const value = Number(fromContract[i]);
+    normalized.push(Number.isFinite(value) ? value : fallback);
+  }
+  return normalized;
+}
+
+function normalizeContract(contract) {
+  const normalized = { ...contract };
+  normalized.years = Math.max(1, Number(normalized.years) || 1);
+  normalized.aav = Number(normalized.aav) || 0;
+  normalized.bonus_eligible = Boolean(normalized.bonus_eligible);
+  normalized.bonus_amount = Number(normalized.bonus_amount) || 0;
+  normalized.yearly_bonus_amounts = normalizeYearlyBonuses(normalized);
+  return normalized;
+}
+
 function formatMoney(val) {
   return "$" + Number(val || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
@@ -40,7 +93,7 @@ export default function PlayerEditor() {
       .then(res => res.json())
       .then(data => {
         setPlayer(data);
-        setContracts(Array.isArray(data.contracts) ? data.contracts : []);
+        setContracts(Array.isArray(data.contracts) ? data.contracts.map(normalizeContract) : []);
         setLoading(false);
       });
   }, [id]);
@@ -118,11 +171,49 @@ export default function PlayerEditor() {
   if (loading || !player) return <div style={{ padding: 40 }}>Loading…</div>;
 
   function updateContract(index, field, value) {
-    setContracts(prev => prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)));
+    setContracts(prev => prev.map((c, i) => {
+      if (i !== index) return c;
+      const next = { ...c, [field]: value };
+      if (field === "years") {
+        next.years = Math.max(1, Number(value) || 1);
+      }
+      if (field === "bonus_amount") {
+        next.bonus_amount = Number(value) || 0;
+      }
+      if (field === "aav") {
+        next.aav = Number(value) || 0;
+      }
+      next.yearly_bonus_amounts = normalizeYearlyBonuses(next);
+      return next;
+    }));
+  }
+
+  function updateContractYearBonus(index, yearIndex, value) {
+    setContracts(prev => prev.map((c, i) => {
+      if (i !== index) return c;
+      const next = { ...c };
+      const yearly = normalizeYearlyBonuses(next);
+      yearly[yearIndex] = Number(value) || 0;
+      next.yearly_bonus_amounts = yearly;
+      return next;
+    }));
   }
 
   function addContract() {
-    setContracts(prev => [...prev, { start_season: "", years: 1, aav: Number(player.aav) || 0, bonus_eligible: false, bonus_amount: 0 }]);
+    const years = Math.max(1, Number(player.contract_years_remaining) || 1);
+    const aav = Number(player.aav) || 0;
+    const startSeason = nextContractStartSeason(contracts, player.season || "2025-26");
+    setContracts(prev => [
+      ...prev,
+      normalizeContract({
+        start_season: startSeason,
+        years,
+        aav,
+        bonus_eligible: false,
+        bonus_amount: 0,
+        yearly_bonus_amounts: Array.from({ length: years }, () => 0),
+      }),
+    ]);
   }
 
   function removeContract(index) {
@@ -362,8 +453,13 @@ export default function PlayerEditor() {
             </div>
           )}
 
-          {contracts.map((c, idx) => (
-            <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr auto", gap: 10, marginBottom: 10 }}>
+          {contracts.map((c, idx) => {
+            const start = seasonStart(c.start_season);
+            const yearlyBonuses = normalizeYearlyBonuses(c);
+
+            return (
+            <div key={idx} style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr auto", gap: 10, marginBottom: 10 }}>
               <input
                 type="text"
                 placeholder="Start season (e.g. 2026-27)"
@@ -393,7 +489,7 @@ export default function PlayerEditor() {
                   checked={Boolean(c.bonus_eligible)}
                   onChange={e => updateContract(idx, "bonus_eligible", e.target.checked)}
                 />
-                Bonus Eligible
+                ELC Bonus Eligible
               </label>
               <input
                 type="number"
@@ -412,7 +508,34 @@ export default function PlayerEditor() {
                 Remove
               </button>
             </div>
-          ))}
+
+              {c.bonus_eligible && (
+                <div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)", marginBottom: 8 }}>
+                    Year-by-year bonus incentive values
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                    {yearlyBonuses.map((amount, yearIndex) => {
+                      const label = start ? seasonLabel(start + yearIndex) : `Year ${yearIndex + 1}`;
+                      return (
+                        <div key={`${idx}-${yearIndex}`}>
+                          <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{label}</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={amount}
+                            onChange={e => updateContractYearBonus(idx, yearIndex, e.target.value)}
+                            style={{ width: "100%", padding: 8 }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            );
+          })}
         </div>
       </div>
     </div>

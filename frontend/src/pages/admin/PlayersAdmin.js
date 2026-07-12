@@ -4,6 +4,13 @@ import { useNavigate } from "react-router-dom";
 import AdminIndicator from "../../components/AdminIndicator";
 import PlayerForm from "./PlayerForm";
 
+function formatPosition(position) {
+  const normalized = String(position || "").trim().toUpperCase();
+  if (normalized === "L") return "LW";
+  if (normalized === "R") return "RW";
+  return normalized || "—";
+}
+
 const API = "http://127.0.0.1:8000";
 
 function authHeaders() {
@@ -111,7 +118,7 @@ export default function PlayersAdmin() {
                   {displayName || "(no name)"}
                 </div>
                 <div style={{ color: "#666", fontSize: 13 }}>
-                  {(p.team || "—") + " • " + (p.position || "—")}
+                  {(p.team || "—") + " • " + formatPosition(p.position)}
                 </div>
 
                 <button

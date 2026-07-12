@@ -8,6 +8,20 @@ function formatMoney(val) {
   return '$' + Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function isGoalie(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  return normalized === 'G' || normalized === 'GOALIE' || normalized === 'GOALTENDER';
+}
+
+function formatMarketValue(value) {
+  return value === null || value === undefined ? '—' : formatMoney(value);
+}
+
+function formatDifference(val) {
+  const amount = Number(val) || 0;
+  return amount >= 0 ? `+${formatMoney(amount)}` : `-${formatMoney(Math.abs(amount))}`;
+}
+
 function getVerdict(actual, market) {
   const delta = market - actual;
   if (delta <= -2000000) return { label: 'Underperforming', className: 'underperforming' };
@@ -61,6 +75,11 @@ export default function Teams() {
   }
 
   const sorted = [...players].sort((a, b) => {
+    if (sortBy === 'difference') {
+      const aDiff = isGoalie(a?.position) ? Number.NEGATIVE_INFINITY : ((Number(a?.market_value) || 0) - (Number(a?.aav) || 0));
+      const bDiff = isGoalie(b?.position) ? Number.NEGATIVE_INFINITY : ((Number(b?.market_value) || 0) - (Number(b?.aav) || 0));
+      return sortDir === 'asc' ? aDiff - bDiff : bDiff - aDiff;
+    }
     const av = a[sortBy], bv = b[sortBy];
     if (sortBy === 'player_name') {
       const an = splitNameParts(av || '');
@@ -86,6 +105,16 @@ export default function Teams() {
       </th>
     );
   }
+
+  const teamActual = players.reduce((sum, p) => {
+    if (isGoalie(p.position)) return sum;
+    return sum + (Number(p.aav) || 0);
+  }, 0);
+  const teamMarket = players.reduce((sum, p) => {
+    if (isGoalie(p.position)) return sum;
+    return sum + (Number(p.market_value) || 0);
+  }, 0);
+  const teamDifference = teamMarket - teamActual;
 
   return (
     <div style={{ padding: '32px 40px' }}>
@@ -115,11 +144,47 @@ export default function Teams() {
             src={resolveLogoUrl(teamMeta?.logo_url)}
             onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
             alt={teamMeta?.display_name || teamCode}
-            style={{ width: 40, height: 40 }}
+            style={{ width: 96, height: 96 }}
           />
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>
             {teamMeta?.display_name || teamCode}
           </h2>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '16px',
+          marginBottom: '20px'
+        }}
+      >
+        <div className="glass" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.9)' }}>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
+            TEAM ACTUAL CAP HIT
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
+            {formatMoney(teamActual)}
+          </div>
+        </div>
+
+        <div className="glass" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.9)' }}>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
+            TEAM MARKET VALUE
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
+            {formatMoney(teamMarket)}
+          </div>
+        </div>
+
+        <div className="glass" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.9)' }}>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
+            DIFFERENCE
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 700, color: teamDifference >= 0 ? '#22c55e' : '#ef4444' }}>
+            {formatDifference(teamDifference)}
+          </div>
         </div>
       </div>
 
@@ -130,13 +195,16 @@ export default function Teams() {
               <SortHeader col="player_name" label="Player" />
               <SortHeader col="aav" label="Actual Cap Hit" />
               <SortHeader col="market_value" label="Market Value" />
+              <SortHeader col="difference" label="Difference" />
               <th>Status</th>
             </tr>
           </thead>
 
           <tbody>
             {sorted.map(p => {
-              const verdict = getVerdict(p.aav || 0, p.market_value || 0);
+              const goalie = isGoalie(p.position);
+              const verdict = goalie ? null : getVerdict(p.aav || 0, p.market_value || 0);
+              const difference = goalie ? null : ((Number(p.market_value) || 0) - (Number(p.aav) || 0));
 
               return (
                 <tr
@@ -168,9 +236,12 @@ export default function Teams() {
                   </td>
 
                   <td>{formatMoney(p.aav || 0)}</td>
-                  <td>{formatMoney(p.market_value || 0)}</td>
+                  <td>{formatMarketValue(p.market_value)}</td>
+                  <td style={{ color: difference === null ? 'rgba(255,255,255,0.65)' : (difference >= 0 ? '#22c55e' : '#ef4444'), fontWeight: 700 }}>
+                    {difference === null ? '—' : formatDifference(difference)}
+                  </td>
                   <td>
-                    <span className={verdict.className}>{verdict.label}</span>
+                    {verdict ? <span className={verdict.className}>{verdict.label}</span> : '—'}
                   </td>
                 </tr>
               );

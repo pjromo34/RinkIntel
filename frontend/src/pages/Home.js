@@ -8,6 +8,16 @@ function formatMoney(val) {
   return '$' + Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function formatDifference(val) {
+  const amount = Number(val) || 0;
+  return amount >= 0 ? `+${formatMoney(amount)}` : `-${formatMoney(Math.abs(amount))}`;
+}
+
+function isGoalie(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  return normalized === 'G' || normalized === 'GOALIE' || normalized === 'GOALTENDER';
+}
+
 function getVerdict(actual, market) {
   const delta = market - actual;
   if (delta <= -2000000) return { label: 'Underperforming', className: 'underperforming' };
@@ -20,6 +30,8 @@ function getVerdict(actual, market) {
 export default function Home() {
   const [teams, setTeams] = useState([]);
   const [articles, setArticles] = useState([]);
+  const [sortBy, setSortBy] = useState('team');
+  const [sortDir, setSortDir] = useState('asc');
   const navigate = useNavigate();
   const defaultLogo = `${API}/static/team_logos/default.svg`;
 
@@ -59,8 +71,10 @@ export default function Home() {
           ...(metaMap[p.team] || { display_name: p.team }),
         };
       }
-      teamMap[p.team].totalActual += p.aav || 0;
-      teamMap[p.team].totalMarket += p.market_value || 0;
+      if (!isGoalie(p.position)) {
+        teamMap[p.team].totalActual += p.aav || 0;
+        teamMap[p.team].totalMarket += p.market_value || 0;
+      }
     });
 
     setTeams(Object.values(teamMap).sort((a, b) => a.team.localeCompare(b.team)));
@@ -71,6 +85,49 @@ export default function Home() {
     .then(res => setArticles(res.data.slice(0, 5)));
 }, []);
 
+  function handleSort(col) {
+    if (sortBy === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(col);
+      setSortDir(col === 'team' ? 'asc' : 'desc');
+    }
+  }
+
+  const sortedTeams = [...teams].sort((a, b) => {
+    if (sortBy === 'team') {
+      const aName = a.display_name || a.team || '';
+      const bName = b.display_name || b.team || '';
+      const cmp = aName.localeCompare(bName);
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
+
+    if (sortBy === 'difference') {
+      const aDiff = (Number(a.totalMarket) || 0) - (Number(a.totalActual) || 0);
+      const bDiff = (Number(b.totalMarket) || 0) - (Number(b.totalActual) || 0);
+      return sortDir === 'asc' ? aDiff - bDiff : bDiff - aDiff;
+    }
+
+    if (sortBy === 'status') {
+      const aVerdict = getVerdict(a.totalActual, a.totalMarket).label;
+      const bVerdict = getVerdict(b.totalActual, b.totalMarket).label;
+      const cmp = aVerdict.localeCompare(bVerdict);
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
+
+    const aNum = Number(a[sortBy]) || 0;
+    const bNum = Number(b[sortBy]) || 0;
+    return sortDir === 'asc' ? aNum - bNum : bNum - aNum;
+  });
+
+  function SortHeader({ col, label }) {
+    return (
+      <th onClick={() => handleSort(col)} style={{ cursor: 'pointer', userSelect: 'none' }}>
+        {label} {sortBy === col ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+      </th>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '32px 40px' }}>
       <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
@@ -79,15 +136,17 @@ export default function Home() {
         <table>
           <thead>
             <tr>
-              <th>Team</th>
-              <th>Actual Cap Hit</th>
-              <th>Market Value</th>
-              <th>Status</th>
+              <SortHeader col="team" label="Team" />
+              <SortHeader col="totalActual" label="Actual Cap Hit" />
+              <SortHeader col="totalMarket" label="Market Value" />
+              <SortHeader col="difference" label="Difference" />
+              <SortHeader col="status" label="Status" />
             </tr>
           </thead>
           <tbody>
-            {teams.map(t => {
+            {sortedTeams.map(t => {
               const verdict = getVerdict(t.totalActual, t.totalMarket);
+              const difference = (Number(t.totalMarket) || 0) - (Number(t.totalActual) || 0);
               return (
                 <tr key={t.team} onClick={() => navigate(`/team/${t.team}`)}>
                     <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -95,12 +154,13 @@ export default function Home() {
                         src={resolveLogoUrl(t.logo_url)}
                         onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
                         alt={t.display_name || t.team}
-                        style={{ width: 24, height: 24 }}
+                        style={{ width: 40, height: 40 }}
                       />
                       <span>{t.display_name || t.team}</span>
                     </td>
                   <td>{formatMoney(t.totalActual)}</td>
                   <td>{formatMoney(t.totalMarket)}</td>
+                    <td style={{ color: difference >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>{formatDifference(difference)}</td>
                   <td><span className={verdict.className}>{verdict.label}</span></td>
                 </tr>
               );

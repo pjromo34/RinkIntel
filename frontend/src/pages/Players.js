@@ -8,6 +8,98 @@ function formatMoney(val) {
   return '$' + Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function isGoalie(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  return normalized === 'G' || normalized === 'GOALIE' || normalized === 'GOALTENDER';
+}
+
+function formatPosition(position) {
+  const normalized = String(position || '').trim().toUpperCase();
+  if (normalized === 'L') return 'LW';
+  if (normalized === 'R') return 'RW';
+  return normalized || 'N/A';
+}
+
+function formatMarketValue(value) {
+  return value === null || value === undefined ? '—' : formatMoney(value);
+}
+
+function formatRangeValue(value, formatter) {
+  return formatter ? formatter(value) : String(value);
+}
+
+function getBounds(players, selector, roundMax = (value) => value) {
+  const values = players.map(selector).map((value) => Number(value) || 0);
+  const maxValue = values.length ? Math.max(...values) : 0;
+  return { min: 0, max: roundMax(maxValue) };
+}
+
+function clampRange(nextMin, nextMax, minimum, maximum) {
+  return [Math.max(minimum, Math.min(nextMin, nextMax)), Math.min(maximum, Math.max(nextMin, nextMax))];
+}
+
+function roundMoneyMax(value) {
+  const bucket = 500000;
+  return Math.max(bucket, Math.ceil((Number(value) || 0) / bucket) * bucket);
+}
+
+function roundXgMax(value) {
+  const rounded = Math.ceil((Number(value) || 0) * 10) / 10;
+  return Math.max(1, rounded);
+}
+
+function DualRangeFilter({ label, min, max, step, value, onChange, formatValue }) {
+  const [currentMin, currentMax] = value;
+  const safeMax = Math.max(min, max);
+  const span = Math.max(1, safeMax - min);
+  const leftPct = ((currentMin - min) / span) * 100;
+  const rightPct = ((currentMax - min) / span) * 100;
+
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', marginBottom: '6px' }}>
+        {label}
+      </label>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '0.78rem', color: 'rgba(255,255,255,0.88)', marginBottom: '8px' }}>
+        <span>{formatRangeValue(currentMin, formatValue)}</span>
+        <span>{formatRangeValue(currentMax, formatValue)}</span>
+      </div>
+      <div style={{ position: 'relative', height: '26px' }}>
+        <div style={{ position: 'absolute', top: '11px', left: 0, right: 0, height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }} />
+        <div
+          style={{
+            position: 'absolute',
+            top: '11px',
+            left: `${leftPct}%`,
+            width: `${Math.max(0, rightPct - leftPct)}%`,
+            height: '4px',
+            borderRadius: '999px',
+            background: '#ffd700'
+          }}
+        />
+        <input
+          type="range"
+          min={min}
+          max={safeMax}
+          step={step}
+          value={currentMin}
+          onChange={(e) => onChange(clampRange(Number(e.target.value), currentMax, min, safeMax))}
+          style={{ position: 'absolute', inset: 0, width: '100%', background: 'transparent', pointerEvents: 'auto' }}
+        />
+        <input
+          type="range"
+          min={min}
+          max={safeMax}
+          step={step}
+          value={currentMax}
+          onChange={(e) => onChange(clampRange(currentMin, Number(e.target.value), min, safeMax))}
+          style={{ position: 'absolute', inset: 0, width: '100%', background: 'transparent', pointerEvents: 'auto' }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function getVerdict(actual, market) {
   const delta = market - actual;
   if (delta <= -2000000) return { label: 'Underperforming', className: 'underperforming' };
@@ -33,7 +125,7 @@ function splitNameParts(name = '') {
   return { first, last };
 }
 
-function MultiSelectFilter({ label, options, selected, onChange }) {
+function MultiSelectFilter({ label, options, selected, onChange, getOptionLabel = (option) => option }) {
   function toggle(value) {
     if (selected.includes(value)) {
       onChange(selected.filter((v) => v !== value));
@@ -82,7 +174,7 @@ function MultiSelectFilter({ label, options, selected, onChange }) {
                 color: 'rgba(255,255,255,0.92)'
               }}
             >
-              <span>{option}</span>
+              <span>{getOptionLabel(option)}</span>
               <input
                 type="checkbox"
                 checked={selected.includes(option)}
@@ -105,15 +197,17 @@ export default function Players() {
   const navigate = useNavigate();
   const [players, setPlayers] = useState([]);
   const [teamMetaByName, setTeamMetaByName] = useState({});
-  const [sortBy, setSortBy] = useState('market_value');
+  const [sortBy, setSortBy] = useState('xg_all_situations');
   const [sortDir, setSortDir] = useState('desc');
   const [selectedPositions, setSelectedPositions] = useState([]);
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [performanceFilter, setPerformanceFilter] = useState('all');
-  const [marketMin, setMarketMin] = useState('');
-  const [marketMax, setMarketMax] = useState('');
-  const [contractMin, setContractMin] = useState('');
-  const [contractMax, setContractMax] = useState('');
+  const [marketRange, setMarketRange] = useState([0, 0]);
+  const [contractRange, setContractRange] = useState([0, 0]);
+  const [goalRange, setGoalRange] = useState([0, 0]);
+  const [assistRange, setAssistRange] = useState([0, 0]);
+  const [pointRange, setPointRange] = useState([0, 0]);
+  const [xgRange, setXgRange] = useState([0, 0]);
 
   const defaultLogo = `${API}/static/team_logos/default.svg`;
   const resolveLogoUrl = (url) => {
@@ -133,15 +227,37 @@ export default function Players() {
         if (team?.team) map[team.team] = team;
       });
       setTeamMetaByName(map);
+
+      const loadedPlayers = playersRes.data || [];
+      const marketBounds = getBounds(loadedPlayers, (p) => p.market_value, roundMoneyMax);
+      const contractBounds = getBounds(loadedPlayers, (p) => p.aav, roundMoneyMax);
+      const goalBounds = getBounds(loadedPlayers, (p) => p.goals, (value) => Math.max(1, Math.ceil(value)));
+      const assistBounds = getBounds(loadedPlayers, (p) => p.assists, (value) => Math.max(1, Math.ceil(value)));
+      const pointBounds = getBounds(loadedPlayers, (p) => p.points, (value) => Math.max(1, Math.ceil(value)));
+      const xgBounds = getBounds(loadedPlayers, (p) => p.xg_all_situations, roundXgMax);
+
+      setMarketRange([marketBounds.min, marketBounds.max]);
+      setContractRange([contractBounds.min, contractBounds.max]);
+      setGoalRange([goalBounds.min, goalBounds.max]);
+      setAssistRange([assistBounds.min, assistBounds.max]);
+      setPointRange([pointBounds.min, pointBounds.max]);
+      setXgRange([xgBounds.min, xgBounds.max]);
     });
   }, []);
+
+  const marketBounds = getBounds(players, (p) => p.market_value, roundMoneyMax);
+  const contractBounds = getBounds(players, (p) => p.aav, roundMoneyMax);
+  const goalBounds = getBounds(players, (p) => p.goals, (value) => Math.max(1, Math.ceil(value)));
+  const assistBounds = getBounds(players, (p) => p.assists, (value) => Math.max(1, Math.ceil(value)));
+  const pointBounds = getBounds(players, (p) => p.points, (value) => Math.max(1, Math.ceil(value)));
+  const xgBounds = getBounds(players, (p) => p.xg_all_situations, roundXgMax);
 
   function handleSort(col) {
     if (sortBy === col) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(col);
-      setSortDir(col === 'market_value' ? 'desc' : 'asc');
+      setSortDir(['market_value', 'aav', 'goals', 'assists', 'points', 'xg_all_situations'].includes(col) ? 'desc' : 'asc');
     }
   }
 
@@ -168,11 +284,6 @@ export default function Players() {
     return sortDir === 'asc' ? aNum - bNum : bNum - aNum;
   }
 
-  const marketMinNum = marketMin === '' ? null : Number(marketMin);
-  const marketMaxNum = marketMax === '' ? null : Number(marketMax);
-  const contractMinNum = contractMin === '' ? null : Number(contractMin);
-  const contractMaxNum = contractMax === '' ? null : Number(contractMax);
-
   const positionOptions = Array.from(
     new Set(players.map((p) => p.position).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
@@ -187,11 +298,17 @@ export default function Players() {
 
     const market = Number(p.market_value) || 0;
     const actual = Number(p.aav) || 0;
+    const goals = Number(p.goals) || 0;
+    const assists = Number(p.assists) || 0;
+    const points = Number(p.points) || 0;
+    const xg = Number(p.xg_all_situations) || 0;
 
-    const byMarketMin = marketMinNum === null || market >= marketMinNum;
-    const byMarketMax = marketMaxNum === null || market <= marketMaxNum;
-    const byContractMin = contractMinNum === null || actual >= contractMinNum;
-    const byContractMax = contractMaxNum === null || actual <= contractMaxNum;
+    const byMarketRange = market >= marketRange[0] && market <= marketRange[1];
+    const byContractRange = actual >= contractRange[0] && actual <= contractRange[1];
+    const byGoalRange = goals >= goalRange[0] && goals <= goalRange[1];
+    const byAssistRange = assists >= assistRange[0] && assists <= assistRange[1];
+    const byPointRange = points >= pointRange[0] && points <= pointRange[1];
+    const byXgRange = xg >= xgRange[0] && xg <= xgRange[1];
 
     const performanceKey = getPerformanceKey(actual, market);
     let byPerformance = true;
@@ -205,7 +322,7 @@ export default function Players() {
       byPerformance = performanceKey === 'meeting';
     }
 
-    return byPosition && byTeam && byMarketMin && byMarketMax && byContractMin && byContractMax && byPerformance;
+    return byPosition && byTeam && byMarketRange && byContractRange && byGoalRange && byAssistRange && byPointRange && byXgRange && byPerformance;
   });
 
   const sorted = [...filteredPlayers].sort(sortCompare);
@@ -241,7 +358,7 @@ export default function Players() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(200px, 1fr))',
+            gridTemplateColumns: 'repeat(3, minmax(220px, 1fr))',
             gap: '14px',
             marginBottom: '18px'
           }}
@@ -252,6 +369,7 @@ export default function Players() {
               options={positionOptions}
               selected={selectedPositions}
               onChange={setSelectedPositions}
+              getOptionLabel={formatPosition}
             />
           </div>
 
@@ -282,47 +400,72 @@ export default function Players() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', marginBottom: '6px' }}>
-              MARKET VALUE RANGE ($)
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <input
-                type="number"
-                placeholder="Min"
-                value={marketMin}
-                onChange={(e) => setMarketMin(e.target.value)}
-                style={{ width: '100%', height: '40px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '8px' }}
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={marketMax}
-                onChange={(e) => setMarketMax(e.target.value)}
-                style={{ width: '100%', height: '40px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '8px' }}
-              />
-            </div>
+            <DualRangeFilter
+              label="MARKET VALUE RANGE ($)"
+              min={marketBounds.min}
+              max={marketBounds.max}
+              step={100000}
+              value={marketRange}
+              onChange={setMarketRange}
+              formatValue={formatMoney}
+            />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', marginBottom: '6px' }}>
-              ACTUAL CONTRACT RANGE ($)
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <input
-                type="number"
-                placeholder="Min"
-                value={contractMin}
-                onChange={(e) => setContractMin(e.target.value)}
-                style={{ width: '100%', height: '40px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '8px' }}
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={contractMax}
-                onChange={(e) => setContractMax(e.target.value)}
-                style={{ width: '100%', height: '40px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '8px' }}
-              />
-            </div>
+            <DualRangeFilter
+              label="ACTUAL CONTRACT RANGE ($)"
+              min={contractBounds.min}
+              max={contractBounds.max}
+              step={100000}
+              value={contractRange}
+              onChange={setContractRange}
+              formatValue={formatMoney}
+            />
+          </div>
+
+          <div>
+            <DualRangeFilter
+              label="GOALS"
+              min={goalBounds.min}
+              max={goalBounds.max}
+              step={1}
+              value={goalRange}
+              onChange={setGoalRange}
+            />
+          </div>
+
+          <div>
+            <DualRangeFilter
+              label="ASSISTS"
+              min={assistBounds.min}
+              max={assistBounds.max}
+              step={1}
+              value={assistRange}
+              onChange={setAssistRange}
+            />
+          </div>
+
+          <div>
+            <DualRangeFilter
+              label="POINTS"
+              min={pointBounds.min}
+              max={pointBounds.max}
+              step={1}
+              value={pointRange}
+              onChange={setPointRange}
+            />
+          </div>
+
+          <div>
+            <DualRangeFilter
+              label="EXPECTED GOALS"
+              min={xgBounds.min}
+              max={xgBounds.max}
+              step={0.1}
+              value={xgRange}
+              onChange={setXgRange}
+              formatValue={(value) => Number(value).toFixed(1)}
+            />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
@@ -331,10 +474,12 @@ export default function Players() {
                 setSelectedPositions([]);
                 setSelectedTeams([]);
                 setPerformanceFilter('all');
-                setMarketMin('');
-                setMarketMax('');
-                setContractMin('');
-                setContractMax('');
+                setMarketRange([marketBounds.min, marketBounds.max]);
+                setContractRange([contractBounds.min, contractBounds.max]);
+                setGoalRange([goalBounds.min, goalBounds.max]);
+                setAssistRange([assistBounds.min, assistBounds.max]);
+                setPointRange([pointBounds.min, pointBounds.max]);
+                setXgRange([xgBounds.min, xgBounds.max]);
               }}
               style={{
                 width: '100%',
@@ -358,12 +503,17 @@ export default function Players() {
               <SortHeader col="aav" label="Actual Cap Hit" />
               <SortHeader col="market_value" label="Market Value" />
               <th>Status</th>
+              <SortHeader col="goals" label="Goals" />
+              <SortHeader col="assists" label="Assists" />
+              <SortHeader col="points" label="Points" />
+              <SortHeader col="xg_all_situations" label="xG" />
             </tr>
           </thead>
 
           <tbody>
             {sorted.map((p) => {
-              const verdict = getVerdict(p.aav || 0, p.market_value || 0);
+              const goalie = isGoalie(p.position);
+              const verdict = goalie ? null : getVerdict(p.aav || 0, p.market_value || 0);
               const teamMeta = teamMetaByName[p.team] || {};
 
               return (
@@ -384,13 +534,17 @@ export default function Players() {
                       src={resolveLogoUrl(teamMeta.logo_url)}
                       onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
                       alt={teamMeta.display_name || p.team}
-                      style={{ width: 20, height: 20 }}
+                      style={{ width: 40, height: 40 }}
                     />
                   </td>
 
                   <td>{formatMoney(p.aav || 0)}</td>
-                  <td>{formatMoney(p.market_value || 0)}</td>
-                  <td><span className={verdict.className}>{verdict.label}</span></td>
+                  <td>{formatMarketValue(p.market_value)}</td>
+                  <td>{verdict ? <span className={verdict.className}>{verdict.label}</span> : '—'}</td>
+                  <td>{Number(p.goals) || 0}</td>
+                  <td>{Number(p.assists) || 0}</td>
+                  <td>{Number(p.points) || 0}</td>
+                  <td>{Number(p.xg_all_situations || 0).toFixed(2)}</td>
                 </tr>
               );
             })}

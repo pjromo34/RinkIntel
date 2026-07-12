@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/simulate", tags=["simulate"])
@@ -27,6 +27,10 @@ class SimInput(BaseModel):
 
 @router.post("")
 def simulate_player(data: SimInput):
+    position = str(data.position or '').strip().upper()
+    if position in {'G', 'GK', 'GOALIE', 'GOALTENDER'}:
+        raise HTTPException(status_code=400, detail='Goalies are not supported by the salary calculator')
+
     # Simplified market value estimate from box-score + impact stats (excluding expected goals).
     predicted = (
         (data.points * 90000)

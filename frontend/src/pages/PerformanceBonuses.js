@@ -85,7 +85,7 @@ export default function PerformanceBonuses() {
                         src={resolveLogoUrl(teamLogos[player.team])}
                         onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
                         alt={player.team}
-                        style={{ width: 22, height: 22 }}
+                        style={{ width: 40, height: 40 }}
                       />
                     </div>
                   </td>
@@ -94,7 +94,7 @@ export default function PerformanceBonuses() {
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span>A Bonuses</span>
-                        <span>{formatMillionsCompact(tracker.earnedA)} / {formatMillionsCompact(tracker.aPool || 1000000)}</span>
+                        <span>{formatMillionsCompact(tracker.earnedA)} / {formatMillionsCompact(tracker.aPool)}</span>
                       </div>
                       <div style={{ height: 7, borderRadius: 999, background: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
                         <div
@@ -109,7 +109,7 @@ export default function PerformanceBonuses() {
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span>B Bonuses</span>
-                        <span>{formatMillionsCompact(tracker.earnedB)} / {formatMillionsCompact(tracker.bPool || 2500000)}</span>
+                        <span>{formatMillionsCompact(tracker.earnedB)} / {formatMillionsCompact(tracker.bPool)}</span>
                       </div>
                       <div style={{ height: 7, borderRadius: 999, background: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
                         <div
@@ -137,7 +137,7 @@ export default function PerformanceBonuses() {
                         </div>
                       </div>
                     ) : (
-                      <span style={{ color: '#22c55e', fontWeight: 700 }}>Maxed Out</span>
+                      <span style={{ color: 'rgba(255,255,255,0.58)', fontWeight: 700 }}>-</span>
                     )}
                   </td>
                 </tr>
