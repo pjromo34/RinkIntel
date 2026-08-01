@@ -20,7 +20,7 @@ from sqlalchemy import or_
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://rinkintel-api.onrender.com")
 
 def make_static_url(path: str) -> str:
     if not path:

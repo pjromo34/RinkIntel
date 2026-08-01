@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import MDEditor from '@uiw/react-md-editor';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://rinkintel-api.onrender.com';
 
 export default function Article() {
   const { id } = useParams();
@@ -12,7 +12,7 @@ export default function Article() {
 
 useEffect(() => {
   axios
-    .get(`http://127.0.0.1:8000/articles/${id}`)
+    .get(`https://rinkintel-api.onrender.com/articles/${id}`)
     .then(res => setArticle(res.data));
 }, [id]);
 

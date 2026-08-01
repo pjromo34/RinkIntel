@@ -3,7 +3,7 @@ import axios from 'axios';
 import TeamConstructionBoard from '../components/TeamConstructionBoard';
 import { allComparableSlots, buildTeamConstruction, formatCapPct } from '../utils/teamConstruction';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://rinkintel-api.onrender.com';
 const DEFAULT_LOGO = `${API}/static/team_logos/default.svg`;
 
 function resolveLogo(url) {

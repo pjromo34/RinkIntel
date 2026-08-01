@@ -4,7 +4,7 @@ import axios from 'axios';
 import TeamConstructionBoard from '../components/TeamConstructionBoard';
 import { buildTeamConstruction } from '../utils/teamConstruction';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://rinkintel-api.onrender.com';
 
 function formatMoney(val) {
   return '$' + Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 });

@@ -4,7 +4,7 @@ import axios from 'axios';
 
 import { bonusProgressColor, computePerformanceBonusTracker } from '../utils/performanceBonuses';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://rinkintel-api.onrender.com';
 
 function formatMoney(val) {
   return '$' + Number(val || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });

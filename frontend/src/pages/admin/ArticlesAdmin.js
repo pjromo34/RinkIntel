@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import AdminIndicator from "../../components/AdminIndicator";
 
-const API = "http://127.0.0.1:8000";
+const API = "https://rinkintel-api.onrender.com";
 const EMPTY = {
   title: "",
   description: "",

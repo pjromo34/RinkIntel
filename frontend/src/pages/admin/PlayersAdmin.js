@@ -11,7 +11,7 @@ function formatPosition(position) {
   return normalized || "—";
 }
 
-const API = "http://127.0.0.1:8000";
+const API = "https://rinkintel-api.onrender.com";
 
 function authHeaders() {
   const token = localStorage.getItem("token");

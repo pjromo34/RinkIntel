@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://rinkintel-api.onrender.com';
 
 export default function News() {
   const [articles, setArticles] = useState([]);
@@ -10,7 +10,7 @@ export default function News() {
 
 useEffect(() => {
   axios
-    .get("http://127.0.0.1:8000/articles")
+    .get("https://rinkintel-api.onrender.com/articles")
     .then(res => setArticles(res.data));
 }, []);
 

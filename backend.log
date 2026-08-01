@@ -1,5 +1,5 @@
 INFO:     Will watch for changes in these directories: ['/Users/pierceromo/Desktop/Hockey Analytics/RinkIntel']
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Uvicorn running on https://rinkintel-api.onrender.com (Press CTRL+C to quit)
 INFO:     Started reloader process [84232] using StatReload
 INFO:     Started server process [84293]
 INFO:     Waiting for application startup.

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-const API = "http://127.0.0.1:8000";
+const API = "https://rinkintel-api.onrender.com";
 
 const TEAMS = [
   "Anaheim Ducks", "Arizona Coyotes", "Boston Bruins", "Buffalo Sabres",

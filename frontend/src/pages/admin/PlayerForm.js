@@ -20,8 +20,8 @@ export default function PlayerForm({ initial = {}, onSaved }) {
 
     const method = initial.id ? "PUT" : "POST";
     const url = initial.id
-      ? `http://127.0.0.1:8000/admin/players/${initial.id}`
-      : `http://127.0.0.1:8000/admin/players`;
+      ? `https://rinkintel-api.onrender.com/admin/players/${initial.id}`
+      : `https://rinkintel-api.onrender.com/admin/players`;
 
     const res = await fetch(url, {
       method,

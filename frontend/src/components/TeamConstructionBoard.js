@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatCapPct, playerCapPct } from '../utils/teamConstruction';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://rinkintel-api.onrender.com';
 const DEFAULT_HEADSHOT = `${API}/static/team_logos/default.svg`;
 
 function resolveImage(url) {
