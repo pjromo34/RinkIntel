@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import os
 
 # ---------------------------------------------------------
 # Create FastAPI app  (MUST come before include_router)
@@ -35,15 +36,21 @@ from backend.database import Base, engine
 # ---------------------------------------------------------
 # CORS configuration
 # ---------------------------------------------------------
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+configured_origins = os.getenv("CORS_ORIGINS", "").strip()
+if configured_origins:
+    origins = [o.strip() for o in configured_origins.split(",") if o.strip()]
+else:
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
