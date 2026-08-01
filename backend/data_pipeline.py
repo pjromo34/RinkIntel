@@ -124,6 +124,36 @@ def fetch_moneypuck_skaters() -> pd.DataFrame:
     return df
 
 
+def aggregate_xg_from_skaters(skaters_df: pd.DataFrame) -> pd.DataFrame:
+    """Build a lightweight xG aggregate from the season skater summary.
+
+    MoneyPuck's skater season CSV already contains player-level xG totals, so
+    we can avoid loading the much larger shot-level archive for homepage and
+    profile display purposes.
+    """
+    if skaters_df is None or skaters_df.empty:
+        return pd.DataFrame(columns=["shooterName", "teamCode", "xG_all_situations"])
+
+    work = skaters_df.copy()
+    if 'situation' in work.columns:
+        work = work[work['situation'].astype(str).str.lower() == 'all']
+
+    name_col = 'name' if 'name' in work.columns else ('playerName' if 'playerName' in work.columns else None)
+    team_col = 'team' if 'team' in work.columns else ('teamCode' if 'teamCode' in work.columns else None)
+    xg_col = 'I_F_xGoals' if 'I_F_xGoals' in work.columns else ('xGoals' if 'xGoals' in work.columns else None)
+
+    if name_col is None or team_col is None or xg_col is None:
+        return pd.DataFrame(columns=["shooterName", "teamCode", "xG_all_situations"])
+
+    aggregated = (
+        work.groupby([name_col, team_col], dropna=False)[xg_col]
+        .sum()
+        .reset_index()
+        .rename(columns={name_col: 'shooterName', team_col: 'teamCode', xg_col: 'xG_all_situations'})
+    )
+    return aggregated
+
+
 def score_shots_with_xg() -> pd.DataFrame:
     """Download shots zip, score with xg model, and return per-player aggregation DataFrame with xG_all_situations keyed by shooterName and teamCode."""
     import numpy as np
@@ -636,8 +666,8 @@ def run_market_value_pipeline(update_existing_only: bool = True):
     print("Running market value pipeline for season", CURRENT_SEASON)
     bios = fetch_nhl_player_bios()
     skaters = fetch_moneypuck_skaters()
-    empty_xg = pd.DataFrame(columns=["shooterName", "teamCode", "xG_all_situations"])
-    df = build_features_and_score_market_value(bios, skaters, empty_xg)
+    xg_agg = aggregate_xg_from_skaters(skaters)
+    df = build_features_and_score_market_value(bios, skaters, xg_agg)
     if update_existing_only:
         update_existing_players_from_predictions(df)
     else:

@@ -25,7 +25,8 @@ from threading import Thread, Event
 
 # Scheduler imports
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
-from backend.models import Player, Article
+from backend.routers_admin_players import fetch_salary_from_rapidapi, extract_salary_from_rapidapi
+from backend.models import Player
 from backend.database import SessionLocal
 from backend.data_pipeline import run_market_value_pipeline
 from typing import Optional
@@ -81,6 +82,40 @@ app.include_router(contract_research_router)
 # ---------------------------------------------------------
 _scheduler_stop_event: Optional[Event] = None
 _scheduler_thread: Optional[Thread] = None
+_salary_sync_thread: Optional[Thread] = None
+
+
+def _salary_sync_loop():
+    import time
+
+    db = SessionLocal()
+    try:
+        while True:
+            players = (
+                db.query(Player)
+                .filter((Player.aav == 0) | (Player.aav.is_(None)))
+                .limit(25)
+                .all()
+            )
+            if not players:
+                break
+
+            for idx, player in enumerate(players):
+                try:
+                    api_data = fetch_salary_from_rapidapi(player.player_name, player.team, player.position)
+                    salary, _ = extract_salary_from_rapidapi(api_data)
+                    if salary is not None:
+                        player.aav = salary
+                        db.add(player)
+                        db.commit()
+                        db.refresh(player)
+                except Exception:
+                    db.rollback()
+
+                if idx < len(players) - 1:
+                    time.sleep(2.5)
+    finally:
+        db.close()
 
 
 def _scheduler_loop(stop_event: Event):
@@ -136,38 +171,18 @@ def _bootstrap_data():
                 run_market_value_pipeline()
             except Exception:
                 pass
-
-        published_articles = db.query(Article).filter(Article.published.is_(True)).count()
-        if published_articles == 0:
-            seed_articles = [
-                Article(
-                    title="Welcome to RinkIntel",
-                    description="A quick tour of the site and the player tools now available on launch.",
-                    content="# Welcome to RinkIntel\n\nRinkIntel tracks players, team construction, contract research, and arbitration in one place.\n\nUse the home page to browse teams, open player profiles, and explore the analytics tools.",
-                    author="RinkIntel",
-                    published=True,
-                ),
-                Article(
-                    title="How to Use Team Construction",
-                    description="A short guide to comparing cap allocation across teams.",
-                    content="# How to Use Team Construction\n\nOpen Team Construction Comparison to compare two clubs side by side.\n\nThe board highlights slot allocations, cap share, and the most comparable roster spots.",
-                    author="RinkIntel",
-                    published=True,
-                ),
-                Article(
-                    title="Contract Research Basics",
-                    description="How to read comparable players and risk scores.",
-                    content="# Contract Research Basics\n\nSearch any skater to see stat comparables, overall comparable players, and a contract risk percentile.\n\nClick any comparable player row to open that profile.",
-                    author="RinkIntel",
-                    published=True,
-                ),
-            ]
-            db.add_all(seed_articles)
-            db.commit()
     except Exception:
         pass
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def _start_salary_sync():
+    global _salary_sync_thread
+    if _salary_sync_thread is None:
+        _salary_sync_thread = Thread(target=_salary_sync_loop, daemon=True)
+        _salary_sync_thread.start()
 
 
 @app.on_event("shutdown")
