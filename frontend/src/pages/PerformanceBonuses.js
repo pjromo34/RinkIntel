@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_BASE_URL } from '../api';
 
 import { bonusProgressColor, computePerformanceBonusTracker } from '../utils/performanceBonuses';
 
-const API = 'https://rinkintel-api.onrender.com';
+const API = API_BASE_URL;
 
 function formatMoney(val) {
   return '$' + Number(val || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });

@@ -2,8 +2,9 @@ import React, { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import TeamConstructionBoard from '../components/TeamConstructionBoard';
 import { allComparableSlots, buildTeamConstruction, formatCapPct } from '../utils/teamConstruction';
+import { API_BASE_URL } from '../api';
 
-const API = 'https://rinkintel-api.onrender.com';
+const API = API_BASE_URL;
 const DEFAULT_LOGO = `${API}/static/team_logos/default.svg`;
 
 function resolveLogo(url) {

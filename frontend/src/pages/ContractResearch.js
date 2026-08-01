@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../api';
 
-const API = 'https://rinkintel-api.onrender.com';
+const API = API_BASE_URL;
 const DEFAULT_HEADSHOT = `${API}/static/team_logos/default.svg`;
 
 function money(value) {

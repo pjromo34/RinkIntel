@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { API_BASE_URL } from '../../api';
 
 export default function PlayerForm({ initial = {}, onSaved }) {
   const [player_name, setPlayerName] = useState(initial.player_name || "");
@@ -20,8 +21,8 @@ export default function PlayerForm({ initial = {}, onSaved }) {
 
     const method = initial.id ? "PUT" : "POST";
     const url = initial.id
-      ? `https://rinkintel-api.onrender.com/admin/players/${initial.id}`
-      : `https://rinkintel-api.onrender.com/admin/players`;
+      ? `${API_BASE_URL}/admin/players/${initial.id}`
+      : `${API_BASE_URL}/admin/players`;
 
     const res = await fetch(url, {
       method,

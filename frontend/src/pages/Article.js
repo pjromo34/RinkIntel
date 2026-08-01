@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import MDEditor from '@uiw/react-md-editor';
-
-const API = 'https://rinkintel-api.onrender.com';
+import { apiUrl } from '../api';
 
 export default function Article() {
   const { id } = useParams();
@@ -12,7 +11,7 @@ export default function Article() {
 
 useEffect(() => {
   axios
-    .get(`https://rinkintel-api.onrender.com/articles/${id}`)
+    .get(apiUrl(`/articles/${id}`))
     .then(res => setArticle(res.data));
 }, [id]);
 

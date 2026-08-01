@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-
-const API = 'https://rinkintel-api.onrender.com';
+import { apiUrl } from '../api';
 
 export default function News() {
   const [articles, setArticles] = useState([]);
@@ -10,7 +9,7 @@ export default function News() {
 
 useEffect(() => {
   axios
-    .get("https://rinkintel-api.onrender.com/articles")
+    .get(apiUrl('/articles'))
     .then(res => setArticles(res.data));
 }, []);
 

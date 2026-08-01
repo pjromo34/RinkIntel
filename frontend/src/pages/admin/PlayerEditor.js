@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { API_BASE_URL } from '../../api';
 
-const API = "https://rinkintel-api.onrender.com";
+const API = API_BASE_URL;
 
 const TEAMS = [
   "Anaheim Ducks", "Arizona Coyotes", "Boston Bruins", "Buffalo Sabres",

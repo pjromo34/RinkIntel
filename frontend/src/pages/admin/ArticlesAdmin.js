@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import AdminIndicator from "../../components/AdminIndicator";
+import { API_BASE_URL } from '../../api';
 
-const API = "https://rinkintel-api.onrender.com";
+const API = API_BASE_URL;
 const EMPTY = {
   title: "",
   description: "",

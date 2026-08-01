@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API = "https://rinkintel-api.onrender.com";
+import { API_BASE_URL } from '../../api';
+const API = API_BASE_URL;
 
 export default function Login() {
   const [username, setUsername] = useState("admin@rinkintel.com");

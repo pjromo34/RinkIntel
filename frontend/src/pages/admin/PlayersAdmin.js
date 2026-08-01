@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminIndicator from "../../components/AdminIndicator";
 import PlayerForm from "./PlayerForm";
+import { API_BASE_URL } from '../../api';
 
 function formatPosition(position) {
   const normalized = String(position || "").trim().toUpperCase();
@@ -11,7 +12,7 @@ function formatPosition(position) {
   return normalized || "—";
 }
 
-const API = "https://rinkintel-api.onrender.com";
+const API = API_BASE_URL;
 
 function authHeaders() {
   const token = localStorage.getItem("token");
