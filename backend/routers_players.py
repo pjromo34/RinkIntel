@@ -8,11 +8,15 @@ from sqlalchemy import or_
 from backend.database import SessionLocal
 from backend.models import Player
 from typing import List, Dict, Optional
-import json
-import urllib.request
+from io import StringIO
 from functools import lru_cache
+import json
+import csv
+import urllib.request
+import re
+import unicodedata
 
-from backend.config import CURRENT_SEASON, SALARY_CAP_BY_SEASON
+from backend.config import CURRENT_SEASON, SALARY_CAP_BY_SEASON, MONEPUCK_SKATERS_URL
 
 # Map full team names to tri-code
 TEAM_NAME_TO_TRICODE_SIMPLE = {
@@ -57,6 +61,10 @@ TEAM_DISPLAY_OVERRIDES = {
     "Utah Hockey Club": "Utah Mammoth",
 }
 
+TRICODE_TO_TEAM_NAME_SIMPLE = {
+    value: key for key, value in TEAM_NAME_TO_TRICODE_SIMPLE.items()
+}
+
 
 def display_team_name(team_name: Optional[str]) -> Optional[str]:
     if not team_name:
@@ -96,6 +104,111 @@ def optional_float(value):
         return float(value)
     except Exception:
         return None
+
+
+def normalize_name(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", str(value))
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = normalized.lower().replace(".", "").replace("'", "")
+    normalized = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", normalized)
+    normalized = re.sub(r"[^a-z ]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def normalize_team_variants(team: Optional[str]) -> List[str]:
+    variants = []
+    if not team:
+        return variants
+
+    raw = str(team).strip()
+    if raw:
+        variants.append(normalize_name(raw))
+
+    display = display_team_name(raw)
+    if display:
+        variants.append(normalize_name(display))
+
+    upper = raw.upper()
+    if upper in TRICODE_TO_TEAM_NAME_SIMPLE:
+        variants.append(normalize_name(TRICODE_TO_TEAM_NAME_SIMPLE[upper]))
+
+    if raw in TEAM_NAME_TO_TRICODE_SIMPLE:
+        variants.append(normalize_name(TEAM_NAME_TO_TRICODE_SIMPLE[raw]))
+
+    seen = set()
+    unique_variants = []
+    for variant in variants:
+        if variant and variant not in seen:
+            seen.add(variant)
+            unique_variants.append(variant)
+    return unique_variants
+
+
+@lru_cache(maxsize=1)
+def fetch_current_season_xg_lookup() -> Dict[tuple, float]:
+    req = urllib.request.Request(
+        MONEPUCK_SKATERS_URL,
+        headers={
+            "Accept": "text/csv,application/octet-stream,*/*",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            "Referer": "https://moneypuck.com/",
+            "Origin": "https://moneypuck.com",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=45) as response:
+            rows = list(csv.DictReader(StringIO(response.read().decode("utf-8", errors="replace"))))
+    except Exception:
+        return {}
+
+    lookup: Dict[tuple, float] = {}
+    for row in rows:
+        if str(row.get("situation") or "all").strip().lower() not in {"all", ""}:
+            continue
+
+        name = row.get("name") or row.get("playerName") or row.get("shooterName")
+        team_value = row.get("team") or row.get("teamCode")
+        xg_value = row.get("I_F_xGoals") or row.get("xGoals") or 0
+
+        try:
+            xg = float(xg_value or 0)
+        except Exception:
+            xg = 0.0
+
+        if not name:
+            continue
+
+        name_key = normalize_name(name)
+        for team_key in normalize_team_variants(team_value):
+            lookup[(name_key, team_key)] = lookup.get((name_key, team_key), 0.0) + xg
+
+        lookup[(name_key, "")] = lookup.get((name_key, ""), 0.0) + xg
+
+    return lookup
+
+
+def fallback_xg_for_player(player_name: Optional[str], team: Optional[str]) -> float:
+    lookup = fetch_current_season_xg_lookup()
+    if not lookup:
+        return 0.0
+
+    name_key = normalize_name(player_name)
+    if not name_key:
+        return 0.0
+
+    candidates = []
+    for team_key in normalize_team_variants(team):
+        candidates.append((name_key, team_key))
+    candidates.append((name_key, ""))
+
+    for candidate in candidates:
+        value = lookup.get(candidate)
+        if value is not None:
+            return float(value)
+    return 0.0
 
 
 @lru_cache(maxsize=2048)
@@ -235,6 +348,8 @@ def build_player_payload(p: Player) -> Dict:
     points = int((current_snapshot or {}).get("points") or p.points or 0)
     games_played = int((current_snapshot or {}).get("games_played") or p.games_played or 0)
     xg = float((current_snapshot or {}).get("xg_all_situations") or p.xg_all_situations or 0)
+    if xg <= 0 and not is_goalie_position(p.position):
+        xg = fallback_xg_for_player(p.player_name, p.team)
     icetime = float((current_snapshot or {}).get("icetime") or p.icetime or 0)
     high_danger_shots = float((current_snapshot or {}).get("high_danger_shots") or getattr(p, "high_danger_shots", 0) or 0)
     blocked_shots = float((current_snapshot or {}).get("blocked_shots") or getattr(p, "blocked_shots", 0) or 0)
