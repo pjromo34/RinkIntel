@@ -26,7 +26,7 @@ from threading import Thread, Event
 # Scheduler imports
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
 from backend.routers_admin_players import fetch_salary_from_rapidapi, extract_salary_from_rapidapi
-from backend.models import Player
+from backend.models import Player, Article
 from backend.database import SessionLocal
 from backend.data_pipeline import run_market_value_pipeline
 from typing import Optional
@@ -43,6 +43,9 @@ if configured_origins:
     origins = [o.strip() for o in configured_origins.split(",") if o.strip()]
 else:
     origins = [
+        "https://rinkintel.net",
+        "https://www.rinkintel.net",
+        "https://api.rinkintel.net",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:3001",
@@ -83,6 +86,12 @@ app.include_router(contract_research_router)
 _scheduler_stop_event: Optional[Event] = None
 _scheduler_thread: Optional[Thread] = None
 _salary_sync_thread: Optional[Thread] = None
+
+SEED_ARTICLE_TITLES = {
+    "Welcome to RinkIntel",
+    "How to Use Team Construction",
+    "Contract Research Basics",
+}
 
 
 def _salary_sync_loop():
@@ -171,6 +180,9 @@ def _bootstrap_data():
                 run_market_value_pipeline()
             except Exception:
                 pass
+
+        db.query(Article).filter(Article.title.in_(SEED_ARTICLE_TITLES)).delete(synchronize_session=False)
+        db.commit()
     except Exception:
         pass
     finally:
