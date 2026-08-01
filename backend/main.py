@@ -25,8 +25,9 @@ from threading import Thread, Event
 
 # Scheduler imports
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
-from backend.models import Player
+from backend.models import Player, Article
 from backend.database import SessionLocal
+from backend.data_pipeline import run_market_value_pipeline
 from typing import Optional
 
 # Database
@@ -128,6 +129,41 @@ def _bootstrap_data():
         if player_count == 0:
             teams = list(TEAM_NAME_TO_TRICODE.values())
             perform_import_rosters(db, teams)
+
+        market_value_count = db.query(Player).filter((Player.market_value == 0) | (Player.market_value.is_(None))).count()
+        if market_value_count > 0:
+            try:
+                run_market_value_pipeline()
+            except Exception:
+                pass
+
+        published_articles = db.query(Article).filter(Article.published.is_(True)).count()
+        if published_articles == 0:
+            seed_articles = [
+                Article(
+                    title="Welcome to RinkIntel",
+                    description="A quick tour of the site and the player tools now available on launch.",
+                    content="# Welcome to RinkIntel\n\nRinkIntel tracks players, team construction, contract research, and arbitration in one place.\n\nUse the home page to browse teams, open player profiles, and explore the analytics tools.",
+                    author="RinkIntel",
+                    published=True,
+                ),
+                Article(
+                    title="How to Use Team Construction",
+                    description="A short guide to comparing cap allocation across teams.",
+                    content="# How to Use Team Construction\n\nOpen Team Construction Comparison to compare two clubs side by side.\n\nThe board highlights slot allocations, cap share, and the most comparable roster spots.",
+                    author="RinkIntel",
+                    published=True,
+                ),
+                Article(
+                    title="Contract Research Basics",
+                    description="How to read comparable players and risk scores.",
+                    content="# Contract Research Basics\n\nSearch any skater to see stat comparables, overall comparable players, and a contract risk percentile.\n\nClick any comparable player row to open that profile.",
+                    author="RinkIntel",
+                    published=True,
+                ),
+            ]
+            db.add_all(seed_articles)
+            db.commit()
     except Exception:
         pass
     finally:

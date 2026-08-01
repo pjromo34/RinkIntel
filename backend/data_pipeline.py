@@ -624,3 +624,22 @@ def run_full_pipeline(update_existing_only: bool = True):
     else:
         write_players_to_db(df)
     return df
+
+
+def run_market_value_pipeline(update_existing_only: bool = True):
+    """Lower-memory version of the pipeline that skips shot-level xG scoring.
+
+    Render startup has a tight memory cap, so this is the version we use when
+    we need market values populated immediately without loading the large shots
+    archive into memory.
+    """
+    print("Running market value pipeline for season", CURRENT_SEASON)
+    bios = fetch_nhl_player_bios()
+    skaters = fetch_moneypuck_skaters()
+    empty_xg = pd.DataFrame(columns=["shooterName", "teamCode", "xG_all_situations"])
+    df = build_features_and_score_market_value(bios, skaters, empty_xg)
+    if update_existing_only:
+        update_existing_players_from_predictions(df)
+    else:
+        write_players_to_db(df)
+    return df
