@@ -27,7 +27,6 @@ from threading import Thread, Event
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
 from backend.models import Player
 from backend.database import SessionLocal
-from backend.data_pipeline import run_full_pipeline
 from typing import Optional
 
 # Database
@@ -106,11 +105,6 @@ def _scheduler_loop(stop_event: Event):
         try:
             teams = list(TEAM_NAME_TO_TRICODE.values())
             perform_import_rosters(db, teams)
-            # run data pipeline immediately after rosters import
-            try:
-                run_full_pipeline()
-            except Exception:
-                pass
         except Exception:
             pass
         finally:
@@ -134,10 +128,6 @@ def _bootstrap_data():
         if player_count == 0:
             teams = list(TEAM_NAME_TO_TRICODE.values())
             perform_import_rosters(db, teams)
-            try:
-                run_full_pipeline()
-            except Exception:
-                pass
     except Exception:
         pass
     finally:
