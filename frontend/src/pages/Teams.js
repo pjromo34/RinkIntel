@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import TeamConstructionBoard from '../components/TeamConstructionBoard';
+import { buildTeamConstruction } from '../utils/teamConstruction';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -36,6 +38,7 @@ export default function Teams() {
   const navigate = useNavigate();
   const [players, setPlayers] = useState([]);
   const [teamMeta, setTeamMeta] = useState(null);
+  const [salaryCap, setSalaryCap] = useState(95500000);
   const [sortBy, setSortBy] = useState('player_name');
   const [sortDir, setSortDir] = useState('asc');
 
@@ -57,12 +60,15 @@ export default function Teams() {
     Promise.all([
       axios.get(`${API}/players?team=${teamCode}`),
       axios.get(`${API}/players/teams`).catch(() => ({ data: [] })),
-    ]).then(([playersRes, teamsRes]) => {
+      axios.get(`${API}/players/meta`).catch(() => ({ data: {} })),
+    ]).then(([playersRes, teamsRes, metaRes]) => {
       setPlayers(playersRes.data || []);
       const found = (teamsRes.data || []).find(
         t => t.team === teamCode || t.display_name === teamCode
       );
       setTeamMeta(found || null);
+      const cap = Number(metaRes?.data?.salary_cap) || 95500000;
+      setSalaryCap(cap);
     });
   }, [teamCode]);
 
@@ -115,6 +121,8 @@ export default function Teams() {
     return sum + (Number(p.market_value) || 0);
   }, 0);
   const teamDifference = teamMarket - teamActual;
+  const isPacedSeason = (players[0]?.season || '') === '2026-27';
+  const teamConstruction = useMemo(() => buildTeamConstruction(players, salaryCap), [players, salaryCap]);
 
   return (
     <div style={{ padding: '32px 40px' }}>
@@ -188,6 +196,15 @@ export default function Teams() {
         </div>
       </div>
 
+      <div style={{ marginBottom: '20px' }}>
+        <TeamConstructionBoard
+          title="Projected Lineup"
+          logoUrl={teamMeta?.logo_url}
+          lineup={teamConstruction.layout}
+          salaryCap={salaryCap}
+        />
+      </div>
+
       <div className="glass" style={{ padding: '24px' }}>
         <table>
           <thead>
@@ -210,7 +227,7 @@ export default function Teams() {
                 <tr
                   key={p.id}
                   onClick={() =>
-                    navigate(`/player/${encodeURIComponent(p.player_name)}`)
+                    navigate(`/player/${encodeURIComponent(p.player_name)}?id=${p.id}`)
                   }
                 >
                   <td
@@ -249,6 +266,19 @@ export default function Teams() {
           </tbody>
         </table>
       </div>
+
+      {isPacedSeason && (
+        <div
+          style={{
+            marginTop: '12px',
+            fontSize: '0.78rem',
+            color: 'rgba(255,255,255,0.65)',
+            textAlign: 'center'
+          }}
+        >
+          Note: 2026-27 market values are projected on an 84-game pace sample.
+        </div>
+      )}
     </div>
   );
 }

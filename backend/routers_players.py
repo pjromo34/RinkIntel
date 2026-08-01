@@ -1,16 +1,18 @@
-# backend/routers/players.py
+# backend/routers_players.py
+
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from backend.database import SessionLocal
 from backend.models import Player
-from typing import List, Dict
+from typing import List, Dict, Optional
 import json
 import urllib.request
 from functools import lru_cache
 
-from backend.config import CURRENT_SEASON
+from backend.config import CURRENT_SEASON, SALARY_CAP_BY_SEASON
 
 # Map full team names to tri-code
 TEAM_NAME_TO_TRICODE_SIMPLE = {
@@ -56,13 +58,13 @@ TEAM_DISPLAY_OVERRIDES = {
 }
 
 
-def display_team_name(team_name: str | None) -> str | None:
+def display_team_name(team_name: Optional[str]) -> Optional[str]:
     if not team_name:
         return team_name
     return TEAM_DISPLAY_OVERRIDES.get(team_name, team_name)
 
 
-def parse_json_list(raw: str | None) -> list:
+def parse_json_list(raw: Optional[str]) -> list:
     if not raw:
         return []
     try:
@@ -72,7 +74,7 @@ def parse_json_list(raw: str | None) -> list:
     return value if isinstance(value, list) else []
 
 
-def season_start(season_label: str | None) -> int:
+def season_start(season_label: Optional[str]) -> int:
     import re
     match = re.search(r"(\d{4})", str(season_label or ""))
     return int(match.group(1)) if match else 0
@@ -82,7 +84,7 @@ def season_label_from_start(start_year: int) -> str:
     return f"{start_year}-{str((start_year + 1) % 100).zfill(2)}"
 
 
-def is_goalie_position(position: str | None) -> bool:
+def is_goalie_position(position: Optional[str]) -> bool:
     pos = str(position or "").strip().upper()
     return pos in {"G", "GK", "GOALIE", "GOALTENDER"}
 
@@ -97,7 +99,7 @@ def optional_float(value):
 
 
 @lru_cache(maxsize=2048)
-def fetch_player_jersey_number(nhl_player_id: str | None):
+def fetch_player_jersey_number(nhl_player_id: Optional[str]):
     if not nhl_player_id:
         return None
 
@@ -243,6 +245,11 @@ def build_player_payload(p: Player) -> Dict:
     if market_value is None and not is_goalie_position(p.position):
         market_value = optional_float(p.market_value)
     current_aav = float(contract_map.get(CURRENT_SEASON, p.aav or 0))
+    primary_assists = float((current_snapshot or {}).get("primary_assists") or getattr(p, "primary_assists", 0) or 0)
+    dzone_giveaways = float((current_snapshot or {}).get("dzone_giveaways") or getattr(p, "dzone_giveaways", 0) or 0)
+    onice_fenwick_pct = float((current_snapshot or {}).get("onice_fenwick_pct") or getattr(p, "onice_fenwick_pct", 0) or 0)
+    onice_corsi_pct = float((current_snapshot or {}).get("onice_corsi_pct") or getattr(p, "onice_corsi_pct", 0) or 0)
+    onice_xgoals_pct = float((current_snapshot or {}).get("onice_xgoals_pct") or getattr(p, "onice_xgoals_pct", 0) or 0)
 
     value_history = []
     seen = set()
@@ -265,6 +272,30 @@ def build_player_payload(p: Player) -> Dict:
         value_history.append({"season": CURRENT_SEASON, "market_value": market_value, "aav": current_aav})
 
     value_history.sort(key=lambda r: season_start(r.get("season")))
+
+    historical_snapshots = []
+    for row in season_history:
+        if not isinstance(row, dict):
+            continue
+        row_season = row.get("season")
+        if not row_season or row_season == CURRENT_SEASON:
+            continue
+        season_aav = float(contract_map.get(row_season, row.get("aav") or 0))
+        row_market = None if is_goalie_position(p.position) else optional_float(row.get("market_value"))
+        historical_snapshots.append(
+            {
+                "season": row_season,
+                "team": row.get("team") or p.team,
+                "goals": int(row.get("goals") or 0),
+                "assists": int(row.get("assists") or 0),
+                "points": int(row.get("points") or 0),
+                "games_played": int(row.get("games_played") or 0),
+                "xg_all_situations": float(row.get("xg_all_situations") or 0),
+                "market_value": row_market,
+                "aav": season_aav,
+            }
+        )
+    historical_snapshots.sort(key=lambda r: season_start(r.get("season")), reverse=True)
 
     contract_years_remaining = int(p.contract_years_remaining or 0)
     if contracts:
@@ -300,6 +331,11 @@ def build_player_payload(p: Player) -> Dict:
         "blocked_shots": blocked_shots,
         "hits": hits,
         "takeaways": takeaways,
+        "primary_assists": primary_assists,
+        "dzone_giveaways": dzone_giveaways,
+        "onice_fenwick_pct": onice_fenwick_pct,
+        "onice_corsi_pct": onice_corsi_pct,
+        "onice_xgoals_pct": onice_xgoals_pct,
         "giveaways": giveaways,
         "market_value": market_value,
         "aav": current_aav,
@@ -307,6 +343,7 @@ def build_player_payload(p: Player) -> Dict:
         "contract_start_season": p.contract_start_season,
         "contracts": contracts_for_response(contracts, contract_map),
         "value_history": value_history,
+        "historical_snapshots": historical_snapshots,
         "headshot_url": p.headshot_url,
     }
 
@@ -325,7 +362,7 @@ def get_db():
 @router.get("")
 @router.get("/")
 def list_players(
-    team: str | None = Query(None),
+    team: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     query = db.query(Player).filter(Player.active_roster.is_(True))
@@ -369,13 +406,23 @@ def list_teams(db: Session = Depends(get_db)):
 
     return teams
 
+
+@router.get("/meta")
+def players_meta():
+    return {
+        "season": CURRENT_SEASON,
+        "salary_cap": float(SALARY_CAP_BY_SEASON.get(CURRENT_SEASON) or 0),
+    }
+
 @router.get("/{player_id}")
 def get_player(player_id: int, db: Session = Depends(get_db)):
     p = db.query(Player).filter(Player.id == player_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    return build_player_payload(p)
+    payload = build_player_payload(p)
+    payload["number"] = fetch_player_jersey_number(str(p.nhl_player_id) if p.nhl_player_id else None)
+    return payload
 
 # ---------------------------------------------------------
 # GET PLAYER BY NAME (public profile)

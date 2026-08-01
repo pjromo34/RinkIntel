@@ -1,5 +1,7 @@
 # backend/routers_admin_players.py
 
+from __future__ import annotations
+
 import os
 import json
 import time
@@ -15,7 +17,7 @@ load_dotenv()
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
@@ -38,7 +40,7 @@ HEADSHOT_DIR = Path("static/headshots")
 HEADSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def fetch_salary_from_rapidapi(player_name: str, team: str | None = None, position: str | None = None, league: str = "NHL"):
+def fetch_salary_from_rapidapi(player_name: str, team: Optional[str] = None, position: Optional[str] = None, league: str = "NHL"):
     host = os.getenv("RAPIDAPI_HOST", "nhl-stats-and-salary.p.rapidapi.com")
     key = os.getenv("RAPIDAPI_KEY")
     if not key or key.startswith("replace_with"):
@@ -509,7 +511,7 @@ def import_player_salaries(
     }
 
 
-def get_team_tricode(team_name: str) -> str | None:
+def get_team_tricode(team_name: str) -> Optional[str]:
     if not team_name:
         return None
 
@@ -596,7 +598,7 @@ def import_player_headshots(
 @router.post("/import-rosters")
 @router.post("/import-rosters/")
 def import_team_rosters(
-    team_codes: str | None = None,
+    team_codes: Optional[str] = None,
     user=Depends(admin_required),
     db: Session = Depends(get_db),
 ):
@@ -627,10 +629,6 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
         "errors": 0,
     }
 
-    # Canonical NHL roster behavior: only players from the roster endpoint are public/active.
-    db.query(models.Player).update({models.Player.active_roster: False}, synchronize_session=False)
-    db.commit()
-
     for team_code in teams:
         try:
             roster = fetch_team_roster(team_code)
@@ -639,6 +637,19 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
             continue
 
         summary["teams_processed"] += 1
+
+        team_name = TRICODE_TO_TEAM_NAME.get(team_code, team_code)
+        team_names_to_reset = {team_name}
+        if team_name == "Utah Hockey Club":
+            team_names_to_reset.add("Utah Mammoth")
+
+        # Only deactivate the team being refreshed, and only after its roster
+        # was fetched successfully, so partial imports do not hide unrelated teams.
+        db.query(models.Player).filter(models.Player.team.in_(team_names_to_reset)).update(
+            {models.Player.active_roster: False},
+            synchronize_session=False,
+        )
+        db.commit()
 
         for entry in roster:
             summary["players_seen"] += 1
@@ -668,7 +679,6 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
                 continue
 
             player_id = str(player_id)
-            team_name = TRICODE_TO_TEAM_NAME.get(team_code, team_code)
 
             # Try to find existing player by nhl_player_id first
             p = db.query(models.Player).filter(models.Player.nhl_player_id == player_id).first()
@@ -724,7 +734,7 @@ def perform_import_rosters(db: Session, teams: list[str]) -> dict:
 @router.post("/import-rosters")
 @router.post("/import-rosters/")
 def import_team_rosters(
-    team_codes: str | None = None,
+    team_codes: Optional[str] = None,
     user=Depends(admin_required),
     db: Session = Depends(get_db),
 ):

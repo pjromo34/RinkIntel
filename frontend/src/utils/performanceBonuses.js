@@ -36,14 +36,36 @@ function seasonBonusAmount(contract, season) {
 
   const start = seasonStart(contract?.start_season || contract?.season);
   const current = seasonStart(season);
+  const years = Math.max(1, Number(contract?.years) || 1);
   const yearIndex = start > 0 && current >= start ? current - start : -1;
+  if (yearIndex < 0 || yearIndex >= years) return 0;
   const yearly = Array.isArray(contract?.yearly_bonus_amounts) ? contract.yearly_bonus_amounts : null;
 
-  if (yearly && yearIndex >= 0 && yearIndex < yearly.length) {
-    return Math.max(0, Number(yearly[yearIndex]) || 0);
+  if (yearly) {
+    if (yearIndex >= 0 && yearIndex < yearly.length) {
+      return Math.max(0, Number(yearly[yearIndex]) || 0);
+    }
+    return 0;
   }
 
   return Math.max(0, Number(contract?.bonus_amount) || 0);
+}
+
+function bonusEligibleInSeason(contract, season) {
+  if (!contract || !contract.bonus_eligible) return false;
+
+  const start = seasonStart(contract?.start_season || contract?.season);
+  const current = seasonStart(season);
+  const years = Math.max(1, Number(contract?.years) || 1);
+  const yearIndex = start > 0 && current >= start ? current - start : -1;
+  if (yearIndex < 0 || yearIndex >= years) return false;
+
+  const yearly = Array.isArray(contract?.yearly_bonus_amounts) ? contract.yearly_bonus_amounts : null;
+  if (yearly) {
+    return Math.max(0, Number(yearly[yearIndex]) || 0) > 0;
+  }
+
+  return Math.max(0, Number(contract?.bonus_amount) || 0) > 0;
 }
 
 function progressThreshold(current, needed) {
@@ -160,7 +182,7 @@ export function computePerformanceBonusTracker(player, allPlayers, currentSeason
   const season = currentSeason || player?.season || null;
   if (!season) return null;
   const contract = activeContract(player, season);
-  if (!contract || !contract.bonus_eligible) return null;
+  if (!bonusEligibleInSeason(contract, season)) return null;
 
   const bonusTotal = seasonBonusAmount(contract, season);
   if (bonusTotal <= 0) return null;

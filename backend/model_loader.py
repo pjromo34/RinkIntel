@@ -8,6 +8,7 @@ MODELS_DIR = BASE / "models"
 XG_MODEL_FILE = MODELS_DIR / "xg_model.pkl"
 FWD_MODEL_FILE = MODELS_DIR / "model_forwards.pkl"
 DEF_MODEL_FILE = MODELS_DIR / "model_defensemen.pkl"
+ARBITRATION_MODEL_FILE = MODELS_DIR / "arbitration_model.pkl"
 
 
 def _ensure_models_exist():
@@ -34,10 +35,16 @@ def load_models():
     with open(DEF_MODEL_FILE, "rb") as f:
         dmodel = pickle.load(f)
 
+    arbitration = None
+    if ARBITRATION_MODEL_FILE.exists():
+        with open(ARBITRATION_MODEL_FILE, "rb") as f:
+            arbitration = pickle.load(f)
+
     return {
         "xg": xg_bundle,
         "fwd": fwd,
         "def": dmodel,
+        "arbitration": arbitration,
     }
 
 

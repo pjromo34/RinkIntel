@@ -5,6 +5,9 @@ import Home from './pages/Home';
 import Teams from './pages/Teams';
 import Players from './pages/Players';
 import PerformanceBonuses from './pages/PerformanceBonuses';
+import Arbitration from './pages/Arbitration';
+import TeamConstructionComparison from './pages/TeamConstructionComparison';
+import ContractResearch from './pages/ContractResearch';
 import PlayerProfile from './pages/PlayerProfile';
 import Calculator from './pages/Calculator';
 import News from './pages/News';
@@ -29,10 +32,13 @@ function App() {
         }}>
           <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
             <NavLink to="/" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Home</NavLink>
-            <NavLink to="/calculator" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Performance Calculator</NavLink>
             <NavLink to="/news" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>News</NavLink>
             <NavLink to="/players" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Players</NavLink>
             <NavLink to="/bonuses" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Performance Bonuses</NavLink>
+            <NavLink to="/team-construction-comparison" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Team Construction Comparison</NavLink>
+            <NavLink to="/contract-research" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Contract Research</NavLink>
+            <NavLink to="/arbitration" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Arbitration Predictor</NavLink>
+            <NavLink to="/calculator" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Performance Calculator</NavLink>
           </div>
           <div style={{ fontWeight: 800, fontSize: '1.4rem', letterSpacing: '0.05em', color: '#ffd700' }}>
             RINKINTEL
@@ -44,6 +50,9 @@ function App() {
           <Route path="/team/:teamCode" element={<Teams />} />
           <Route path="/players" element={<Players />} />
           <Route path="/bonuses" element={<PerformanceBonuses />} />
+          <Route path="/team-construction-comparison" element={<TeamConstructionComparison />} />
+          <Route path="/contract-research" element={<ContractResearch />} />
+          <Route path="/arbitration" element={<Arbitration />} />
           <Route path="/player/:playerName" element={<PlayerProfile />} />
           <Route path="/calculator" element={<Calculator />} />
           <Route path="/news" element={<News />} />

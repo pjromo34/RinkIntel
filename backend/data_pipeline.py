@@ -3,6 +3,8 @@
 Functions are organized for testability and clarity. This module does not
 retrain models; it uses pickled artifacts loaded via `model_loader`.
 """
+from __future__ import annotations
+
 import os
 import io
 import csv
@@ -12,19 +14,19 @@ import urllib.request
 import json
 import re
 import unicodedata
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import pandas as pd
 from fastapi import HTTPException
 
-from backend.config import CURRENT_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE
+from backend.config import CURRENT_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE, MARKET_VALUE_PACE_GAMES_BY_SEASON
 from backend.model_loader import get_models
 from backend.routers_admin_players import TEAM_NAME_TO_TRICODE
 from backend.database import SessionLocal
 from backend import models
 
 
-def _normalize_name(value: str | None) -> str:
+def _normalize_name(value: Optional[str]) -> str:
     if not value:
         return ""
     normalized = unicodedata.normalize("NFKD", str(value))
@@ -35,7 +37,7 @@ def _normalize_name(value: str | None) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
-def fetch_nhl_player_bios(team_codes: List[str] | None = None) -> List[Dict[str, Any]]:
+def fetch_nhl_player_bios(team_codes: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Fetch NHL roster bios for given team codes (tri-codes). Returns list of dicts with keys: name, player_id, team, position, birthDate.
     If team_codes is None, fetch for all known teams from TEAM_NAME_TO_TRICODE.
     """
@@ -216,7 +218,7 @@ def score_shots_with_xg() -> pd.DataFrame:
     return agg
 
 
-def compute_age_at_signing(birthdate: str, signing_date: str | None) -> float | None:
+def compute_age_at_signing(birthdate: str, signing_date: Optional[str]) -> Optional[float]:
     """Compute age at signing as of Sept 15 of signing year. If signing_date is missing, return None.
     Dates expected as ISO strings; caller must handle parsing.
     """
@@ -258,7 +260,7 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
                 combined[col] = pd.to_numeric(rows[col], errors='coerce').fillna(0).sum()
 
         weight_col = 'icetime' if 'icetime' in rows.columns else ('timeOnIce' if 'timeOnIce' in rows.columns else None)
-        for col in ['onIce_xGoalsPercentage', 'onIce_corsiPercentage']:
+        for col in ['onIce_xGoalsPercentage', 'onIce_corsiPercentage', 'onIce_fenwickPercentage']:
             if col not in rows.columns:
                 continue
             values = pd.to_numeric(rows[col], errors='coerce')
@@ -285,6 +287,29 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
         raise RuntimeError("MoneyPuck skaters CSV missing player name column (expected 'name' or 'playerName').")
 
     skaters_df_copy['_normalized_name'] = skaters_df_copy[name_col].map(_normalize_name)
+
+    def filter_identity(rows: pd.DataFrame, nhl_player_id: Any, position_code: Any) -> pd.DataFrame:
+        filtered = rows
+
+        # Strongest disambiguation key for duplicate names (e.g., Elias Pettersson C/D).
+        if 'playerId' in filtered.columns and nhl_player_id:
+            try:
+                pid = int(str(nhl_player_id))
+                pid_matches = filtered[pd.to_numeric(filtered['playerId'], errors='coerce') == pid]
+                if not pid_matches.empty:
+                    return pid_matches
+            except Exception:
+                pass
+
+        # Fallback to position filter when playerId is unavailable.
+        if 'position' in filtered.columns and position_code:
+            pos = str(position_code).strip().upper()
+            if pos:
+                pos_matches = filtered[filtered['position'].astype(str).str.strip().str.upper() == pos]
+                if not pos_matches.empty:
+                    return pos_matches
+
+        return filtered
 
     def nz(value, default=0.0):
         try:
@@ -321,6 +346,8 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
             else:
                 matched = exact_matches
 
+            matched = filter_identity(matched, nhl_id, pos)
+
         if matched.empty:
             normalized_name = _normalize_name(name)
             if normalized_name:
@@ -331,6 +358,8 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
                         matched = team_matches if not team_matches.empty else normalized_matches
                     else:
                         matched = normalized_matches
+
+                    matched = filter_identity(matched, nhl_id, pos)
 
         if matched.empty:
             # flag missing — still create minimal row
@@ -350,51 +379,47 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
         except Exception:
             points_per_60 = None
 
-        age_at_signing = float('nan')  # contract signing data not available — leave missing per instructions
-
         feature = {
             'I_F_points': nz(sk.get('I_F_points', points), 0.0),
             'I_F_primaryAssists': nz(sk.get('I_F_primaryAssists', 0), 0.0),
             'I_F_secondaryAssists': nz(sk.get('I_F_secondaryAssists', 0), 0.0),
             'I_F_goals': nz(sk.get('I_F_goals', sk.get('goals', 0)), 0.0),
             'I_F_highDangerShots': nz(sk.get('I_F_highDangerShots', 0), 0.0),
-            'I_F_highDangerGoals': nz(sk.get('I_F_highDangerGoals', 0), 0.0),
             'I_F_hits': nz(sk.get('I_F_hits', 0), 0.0),
             'I_F_takeaways': nz(sk.get('I_F_takeaways', 0), 0.0),
-            'points_per_60': nz(points_per_60, 0.0),
             'I_F_giveaways': nz(sk.get('I_F_giveaways', 0), 0.0),
             'I_F_dZoneGiveaways': nz(sk.get('I_F_dZoneGiveaways', 0), 0.0),
             'I_F_blockedShotAttempts': nz(sk.get('I_F_blockedShotAttempts', 0), 0.0),
-            'OnIce_A_xGoals': nz(sk.get('OnIce_A_xGoals', 0), 0.0),
-            'OnIce_A_goals': nz(sk.get('OnIce_A_goals', 0), 0.0),
             'games_played': nz(sk.get('games_played', sk.get('games', 0)), 0.0),
             'icetime': nz(icetime, 0.0),
             'onIce_xGoalsPercentage': nz(sk.get('onIce_xGoalsPercentage', 0), 0.0),
             'onIce_corsiPercentage': nz(sk.get('onIce_corsiPercentage', 0), 0.0),
-            'xG_all_situations': nz(xg_val, 0.0),
-            'Age at Signing': age_at_signing,
+            'onIce_fenwickPercentage': nz(sk.get('onIce_fenwickPercentage', 0), 0.0),
+            'xG_all_situations': nz(xg_val, 0.0),  # kept for display (player profile) -- not a model input anymore
             'position': 3 if (pos == 'D' or pos == 'defenseman') else (0 if pos == 'C' else (1 if pos == 'L' else (2 if pos == 'R' else 0)))
         }
 
         capPercent = None
         market_value = None
         if not is_goalie_position(pos):
+            games_played_for_pace = max(0.0, float(feature['games_played'] or 0.0))
+            pace_games_target = MARKET_VALUE_PACE_GAMES_BY_SEASON.get(CURRENT_SEASON)
+            pace_factor = 1.0
+            if pace_games_target and games_played_for_pace > 0:
+                pace_factor = float(pace_games_target) / games_played_for_pace
+
             model = def_model if feature['position'] == 3 else fwd_model
 
+            # This model was trained on exactly these 10 columns. The names
+            # must continue matching training even if feature order changes.
             X_row = pd.DataFrame([[
-                feature['I_F_points'], feature['I_F_primaryAssists'], feature['I_F_secondaryAssists'], feature['I_F_goals'],
-                feature['I_F_highDangerShots'], feature['I_F_highDangerGoals'], feature['I_F_hits'], feature['I_F_takeaways'],
-                feature['points_per_60'], feature['I_F_giveaways'], feature['I_F_dZoneGiveaways'], feature['I_F_blockedShotAttempts'],
-                feature['OnIce_A_xGoals'], feature['OnIce_A_goals'], feature['games_played'], feature['icetime'],
-                feature['onIce_xGoalsPercentage'], feature['onIce_corsiPercentage'], feature['xG_all_situations'],
-                feature['Age at Signing'], feature['position']
+                feature['onIce_fenwickPercentage'], feature['onIce_corsiPercentage'], feature['onIce_xGoalsPercentage'],
+                feature['I_F_goals'] * pace_factor, feature['I_F_primaryAssists'] * pace_factor, feature['icetime'] * pace_factor,
+                feature['I_F_takeaways'] * pace_factor, feature['I_F_hits'] * pace_factor, feature['I_F_dZoneGiveaways'] * pace_factor, feature['I_F_giveaways'] * pace_factor
             ]], columns=[
-                'I_F_points','I_F_primaryAssists','I_F_secondaryAssists','I_F_goals',
-                'I_F_highDangerShots','I_F_highDangerGoals','I_F_hits','I_F_takeaways',
-                'points_per_60','I_F_giveaways','I_F_dZoneGiveaways','I_F_blockedShotAttempts',
-                'OnIce_A_xGoals','OnIce_A_goals','games_played','icetime',
-                'onIce_xGoalsPercentage','onIce_corsiPercentage','xG_all_situations',
-                'Age at Signing','position'
+                'onIce_fenwickPercentage', 'onIce_corsiPercentage', 'onIce_xGoalsPercentage',
+                'I_F_goals', 'I_F_primaryAssists', 'icetime',
+                'I_F_takeaways', 'I_F_hits', 'I_F_dZoneGiveaways', 'I_F_giveaways'
             ])
 
             try:
@@ -423,6 +448,11 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
             'blocked_shots': feature['I_F_blockedShotAttempts'],
             'hits': feature['I_F_hits'],
             'takeaways': feature['I_F_takeaways'],
+            'I_F_primaryAssists': feature['I_F_primaryAssists'],
+            'I_F_dZoneGiveaways': feature['I_F_dZoneGiveaways'],
+            'onIce_fenwickPercentage': feature['onIce_fenwickPercentage'],
+            'onIce_corsiPercentage': feature['onIce_corsiPercentage'],
+            'onIce_xGoalsPercentage': feature['onIce_xGoalsPercentage'],
             'giveaways': feature['I_F_giveaways'],
         })
 
@@ -446,6 +476,11 @@ def write_players_to_db(df: pd.DataFrame):
                 games_played=int(r.get('games_played') or 0),
                 hits=float(r.get('hits') or 0),
                 takeaways=float(r.get('takeaways') or 0),
+                primary_assists=float(r.get('I_F_primaryAssists') or 0),
+                dzone_giveaways=float(r.get('I_F_dZoneGiveaways') or 0),
+                onice_fenwick_pct=float(r.get('onIce_fenwickPercentage') or 0),
+                onice_corsi_pct=float(r.get('onIce_corsiPercentage') or 0),
+                onice_xgoals_pct=float(r.get('onIce_xGoalsPercentage') or 0),
                 giveaways=float(r.get('giveaways') or 0),
                 market_value=r.get('market_value'),
                 aav=None,
@@ -503,6 +538,7 @@ def update_existing_players_from_predictions(df: pd.DataFrame):
 
             snapshot = {
                 'season': CURRENT_SEASON,
+                'team': p.team,
                 'goals': int(r.get('goals') or 0),
                 'assists': int(r.get('assists') or 0),
                 'points': int(r.get('points') or 0),
@@ -513,6 +549,11 @@ def update_existing_players_from_predictions(df: pd.DataFrame):
                 'blocked_shots': float(r.get('blocked_shots') or 0),
                 'hits': float(r.get('hits') or 0),
                 'takeaways': float(r.get('takeaways') or 0),
+                'primary_assists': float(r.get('I_F_primaryAssists') or 0),
+                'dzone_giveaways': float(r.get('I_F_dZoneGiveaways') or 0),
+                'onice_fenwick_pct': float(r.get('onIce_fenwickPercentage') or 0),
+                'onice_corsi_pct': float(r.get('onIce_corsiPercentage') or 0),
+                'onice_xgoals_pct': float(r.get('onIce_xGoalsPercentage') or 0),
                 'giveaways': float(r.get('giveaways') or 0),
                 'market_value': None if r.get('market_value') is None else float(r.get('market_value') or 0),
             }
@@ -548,6 +589,16 @@ def update_existing_players_from_predictions(df: pd.DataFrame):
                 p.hits = float(r.get('hits') or 0)
             if r.get('takeaways') is not None:
                 p.takeaways = float(r.get('takeaways') or 0)
+            if r.get('I_F_primaryAssists') is not None:
+                p.primary_assists = float(r.get('I_F_primaryAssists') or 0)
+            if r.get('I_F_dZoneGiveaways') is not None:
+                p.dzone_giveaways = float(r.get('I_F_dZoneGiveaways') or 0)
+            if r.get('onIce_fenwickPercentage') is not None:
+                p.onice_fenwick_pct = float(r.get('onIce_fenwickPercentage') or 0)
+            if r.get('onIce_corsiPercentage') is not None:
+                p.onice_corsi_pct = float(r.get('onIce_corsiPercentage') or 0)
+            if r.get('onIce_xGoalsPercentage') is not None:
+                p.onice_xgoals_pct = float(r.get('onIce_xGoalsPercentage') or 0)
             if r.get('giveaways') is not None:
                 p.giveaways = float(r.get('giveaways') or 0)
             p.season = CURRENT_SEASON

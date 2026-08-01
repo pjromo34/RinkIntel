@@ -1,5 +1,7 @@
 # backend/main.py
 
+from __future__ import annotations
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,12 +18,15 @@ from backend.routers_admin_articles import router as admin_articles_router
 from backend.routers_admin_players import router as admin_players_router
 from backend.routers_auth import router as auth_router
 from backend.routers_simulation import router as simulation_router
+from backend.routers_arbitration import router as arbitration_router
+from backend.routers_contract_research import router as contract_research_router
 from threading import Thread, Event
 
 # Scheduler imports
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
 from backend.database import SessionLocal
 from backend.data_pipeline import run_full_pipeline
+from typing import Optional
 
 # Database
 from backend.database import Base, engine
@@ -59,13 +64,15 @@ app.include_router(admin_articles_router)
 app.include_router(admin_players_router)
 app.include_router(auth_router)
 app.include_router(simulation_router)   # <-- FIXED
+app.include_router(arbitration_router)
+app.include_router(contract_research_router)
 
 
 # ---------------------------------------------------------
 # Background scheduler to sync rosters daily at 02:00
 # ---------------------------------------------------------
-_scheduler_stop_event: Event | None = None
-_scheduler_thread: Thread | None = None
+_scheduler_stop_event: Optional[Event] = None
+_scheduler_thread: Optional[Thread] = None
 
 
 def _scheduler_loop(stop_event: Event):

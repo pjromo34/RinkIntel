@@ -109,15 +109,6 @@ function getVerdict(actual, market) {
   return { label: 'Overperforming', className: 'overperforming' };
 }
 
-function getPerformanceKey(actual, market) {
-  const delta = (market || 0) - (actual || 0);
-  if (delta <= -2000000) return 'under';
-  if (delta < -1000000) return 'slight-under';
-  if (delta <= 1000000) return 'meeting';
-  if (delta < 2000000) return 'slight-over';
-  return 'over';
-}
-
 function splitNameParts(name = '') {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
   const first = parts.slice(0, -1).join(' ');
@@ -199,9 +190,9 @@ export default function Players() {
   const [teamMetaByName, setTeamMetaByName] = useState({});
   const [sortBy, setSortBy] = useState('xg_all_situations');
   const [sortDir, setSortDir] = useState('desc');
+  const [playerSearch, setPlayerSearch] = useState('');
   const [selectedPositions, setSelectedPositions] = useState([]);
   const [selectedTeams, setSelectedTeams] = useState([]);
-  const [performanceFilter, setPerformanceFilter] = useState('all');
   const [marketRange, setMarketRange] = useState([0, 0]);
   const [contractRange, setContractRange] = useState([0, 0]);
   const [goalRange, setGoalRange] = useState([0, 0]);
@@ -293,6 +284,11 @@ export default function Players() {
   ).sort((a, b) => a.localeCompare(b));
 
   const filteredPlayers = players.filter((p) => {
+    const searchText = String(playerSearch || '').trim().toLowerCase();
+    const nameText = String(p.player_name || '').toLowerCase();
+    const teamText = String(p.team || '').toLowerCase();
+    const bySearch = !searchText || nameText.includes(searchText) || teamText.includes(searchText);
+
     const byPosition = selectedPositions.length === 0 || selectedPositions.includes(p.position);
     const byTeam = selectedTeams.length === 0 || selectedTeams.includes(p.team);
 
@@ -310,19 +306,7 @@ export default function Players() {
     const byPointRange = points >= pointRange[0] && points <= pointRange[1];
     const byXgRange = xg >= xgRange[0] && xg <= xgRange[1];
 
-    const performanceKey = getPerformanceKey(actual, market);
-    let byPerformance = true;
-    if (performanceFilter === 'under') {
-      byPerformance = performanceKey === 'under' || performanceKey === 'slight-under';
-    } else if (performanceFilter === 'over') {
-      byPerformance = performanceKey === 'over' || performanceKey === 'slight-over';
-    } else if (performanceFilter === 'slightly') {
-      byPerformance = performanceKey === 'slight-under' || performanceKey === 'slight-over';
-    } else if (performanceFilter === 'meeting') {
-      byPerformance = performanceKey === 'meeting';
-    }
-
-    return byPosition && byTeam && byMarketRange && byContractRange && byGoalRange && byAssistRange && byPointRange && byXgRange && byPerformance;
+    return bySearch && byPosition && byTeam && byMarketRange && byContractRange && byGoalRange && byAssistRange && byPointRange && byXgRange;
   });
 
   const sorted = [...filteredPlayers].sort(sortCompare);
@@ -364,6 +348,19 @@ export default function Players() {
           }}
         >
           <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', marginBottom: '6px' }}>
+              PLAYER SEARCH
+            </label>
+            <input
+              type="text"
+              value={playerSearch}
+              onChange={(e) => setPlayerSearch(e.target.value)}
+              placeholder="Search player or team"
+              style={{ width: '100%', height: '40px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '8px 12px' }}
+            />
+          </div>
+
+          <div>
             <MultiSelectFilter
               label="POSITION"
               options={positionOptions}
@@ -379,24 +376,18 @@ export default function Players() {
               options={teamOptions}
               selected={selectedTeams}
               onChange={setSelectedTeams}
+              getOptionLabel={(team) => (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <img
+                    src={resolveLogoUrl((teamMetaByName[team] || {}).logo_url)}
+                    onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
+                    alt={team}
+                    style={{ width: 18, height: 18, flexShrink: 0 }}
+                  />
+                  <span>{team}</span>
+                </span>
+              )}
             />
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', marginBottom: '6px' }}>
-              PERFORMANCE
-            </label>
-            <select
-              value={performanceFilter}
-              onChange={(e) => setPerformanceFilter(e.target.value)}
-              style={{ width: '100%', height: '40px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '8px' }}
-            >
-              <option value="all">All</option>
-              <option value="under">Underperforming</option>
-              <option value="over">Overperforming</option>
-              <option value="slightly">Slightly Performing</option>
-              <option value="meeting">Meeting Expectations</option>
-            </select>
           </div>
 
           <div>
@@ -471,9 +462,9 @@ export default function Players() {
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
             <button
               onClick={() => {
+                setPlayerSearch('');
                 setSelectedPositions([]);
                 setSelectedTeams([]);
-                setPerformanceFilter('all');
                 setMarketRange([marketBounds.min, marketBounds.max]);
                 setContractRange([contractBounds.min, contractBounds.max]);
                 setGoalRange([goalBounds.min, goalBounds.max]);
@@ -519,7 +510,7 @@ export default function Players() {
               return (
                 <tr
                   key={p.id}
-                  onClick={() => navigate(`/player/${encodeURIComponent(p.player_name)}`)}
+                  onClick={() => navigate(`/player/${encodeURIComponent(p.player_name)}?id=${p.id}`)}
                 >
                   <td style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {p.headshot_url && (

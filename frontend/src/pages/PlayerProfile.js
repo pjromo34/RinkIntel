@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { bonusProgressColor, computePerformanceBonusTracker } from '../utils/performanceBonuses';
 
@@ -273,6 +273,7 @@ function PlayerValueChart({ data }) {
 export default function PlayerProfile() {
   const { playerName } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [player, setPlayer] = useState(null);
   const [allPlayers, setAllPlayers] = useState([]);
   const [teamLogos, setTeamLogos] = useState({});
@@ -285,9 +286,22 @@ export default function PlayerProfile() {
   };
 
   useEffect(() => {
-    axios
-      .get(`${API}/players/by-name/${encodeURIComponent(playerName)}`)
-      .then(res => setPlayer(res.data));
+    const params = new URLSearchParams(location.search || '');
+    const playerId = params.get('id');
+    const playerReq = playerId
+      ? axios.get(`${API}/players/${encodeURIComponent(playerId)}`)
+      : axios.get(`${API}/players/by-name/${encodeURIComponent(playerName)}`);
+
+    playerReq
+      .then(res => setPlayer(res.data))
+      .catch(() => {
+        if (playerName) {
+          axios
+            .get(`${API}/players/by-name/${encodeURIComponent(playerName)}`)
+            .then(res => setPlayer(res.data))
+            .catch(() => {});
+        }
+      });
 
     axios
       .get(`${API}/players`)
@@ -304,7 +318,7 @@ export default function PlayerProfile() {
         setTeamLogos(map);
       })
       .catch(() => {});
-  }, [playerName]);
+  }, [playerName, location.search]);
 
   if (!player) return <div style={{ padding: '40px' }}>Loading...</div>;
 
@@ -356,6 +370,7 @@ export default function PlayerProfile() {
   const valueDifference = goalie || player.market_value === null || player.market_value === undefined
     ? null
     : (Number(player.market_value) || 0) - (Number(currentAav) || 0);
+  const historicalSnapshots = Array.isArray(player.historical_snapshots) ? player.historical_snapshots : [];
 
   return (
     <div style={{ padding: '32px 40px' }}>
@@ -589,6 +604,48 @@ export default function PlayerProfile() {
           </div>
 
           <PlayerValueChart data={chartRows} />
+
+          {historicalSnapshots.length > 0 && (
+            <div style={{ marginTop: '24px' }}>
+              <h3 style={{ marginBottom: '10px', fontSize: '1.05rem' }}>Prior Seasons</h3>
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {historicalSnapshots.map((row) => {
+                  const prevDiff = goalie || row.market_value === null || row.market_value === undefined
+                    ? null
+                    : (Number(row.market_value) || 0) - (Number(row.aav) || 0);
+                  return (
+                    <div key={row.season} className="glass" style={{ padding: '14px', border: '1px solid rgba(255,255,255,0.2)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <img
+                            src={resolveLogoUrl(teamLogos[row.team])}
+                            onError={(e) => { e.target.onerror = null; e.target.src = defaultLogo; }}
+                            alt={row.team || 'Team'}
+                            style={{ width: 24, height: 24 }}
+                          />
+                          <div style={{ fontWeight: 700 }}>{row.team || 'N/A'}</div>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#ffd700', fontWeight: 800 }}>{row.season}</div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '8px', marginBottom: '8px' }}>
+                        <div className="glass" style={{ padding: '8px', textAlign: 'center' }}><div style={{ fontSize: '1rem', fontWeight: 800 }}>{row.goals || 0}</div><div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.68)' }}>Goals</div></div>
+                        <div className="glass" style={{ padding: '8px', textAlign: 'center' }}><div style={{ fontSize: '1rem', fontWeight: 800 }}>{row.assists || 0}</div><div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.68)' }}>Assists</div></div>
+                        <div className="glass" style={{ padding: '8px', textAlign: 'center' }}><div style={{ fontSize: '1rem', fontWeight: 800 }}>{row.points || 0}</div><div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.68)' }}>Points</div></div>
+                        <div className="glass" style={{ padding: '8px', textAlign: 'center' }}><div style={{ fontSize: '1rem', fontWeight: 800 }}>{Number(row.xg_all_situations || 0).toFixed(2)}</div><div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.68)' }}>xG</div></div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '8px' }}>
+                        <div className="glass" style={{ padding: '8px' }}><div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.65)' }}>ACTUAL CAP HIT</div><div style={{ fontWeight: 800 }}>{formatMoney(row.aav || 0)}</div></div>
+                        <div className="glass" style={{ padding: '8px' }}><div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.65)' }}>MARKET VALUE</div><div style={{ fontWeight: 800 }}>{formatMarketValue(row.market_value)}</div></div>
+                        <div className="glass" style={{ padding: '8px' }}><div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.65)' }}>DIFFERENCE</div><div style={{ fontWeight: 800, color: prevDiff === null ? 'rgba(255,255,255,0.6)' : (prevDiff >= 0 ? '#22c55e' : '#ef4444') }}>{prevDiff === null ? '—' : formatDifference(prevDiff)}</div></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {bonusTracker && (
             <div style={{ marginTop: '26px' }}>

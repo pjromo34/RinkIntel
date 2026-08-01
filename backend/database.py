@@ -75,6 +75,31 @@ with engine.begin() as conn:
     )
     conn.execute(
         text(
+            "ALTER TABLE players ADD COLUMN IF NOT EXISTS primary_assists DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE players ADD COLUMN IF NOT EXISTS dzone_giveaways DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE players ADD COLUMN IF NOT EXISTS onice_fenwick_pct DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE players ADD COLUMN IF NOT EXISTS onice_corsi_pct DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE players ADD COLUMN IF NOT EXISTS onice_xgoals_pct DOUBLE PRECISION NOT NULL DEFAULT 0"
+        )
+    )
+    conn.execute(
+        text(
             "ALTER TABLE players ADD COLUMN IF NOT EXISTS giveaways DOUBLE PRECISION NOT NULL DEFAULT 0"
         )
     )

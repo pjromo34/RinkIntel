@@ -20,16 +20,15 @@ function isGoalie(position) {
 
 function getVerdict(actual, market) {
   const delta = market - actual;
-  if (delta <= -2000000) return { label: 'Underperforming', className: 'underperforming' };
-  if (delta < -1000000) return { label: 'Slightly Underperforming', className: 'slightly-underperforming' };
-  if (delta <= 1000000) return { label: 'Meeting Expectations', className: 'meeting' };
-  if (delta < 2000000) return { label: 'Slightly Overperforming', className: 'slightly-overperforming' };
-  return { label: 'Overperforming', className: 'overperforming' };
+  if (delta >= 6000000) return { label: 'Overperforming', className: 'overperforming' };
+  if (delta <= -6000000) return { label: 'Underperforming', className: 'underperforming' };
+  return { label: 'Meeting Expectations', className: 'meeting' };
 }
 
 export default function Home() {
   const [teams, setTeams] = useState([]);
   const [articles, setArticles] = useState([]);
+  const [apiError, setApiError] = useState('');
   const [sortBy, setSortBy] = useState('team');
   const [sortDir, setSortDir] = useState('asc');
   const navigate = useNavigate();
@@ -43,46 +42,56 @@ export default function Home() {
 
  useEffect(() => {
   Promise.all([
-    axios.get("http://127.0.0.1:8000/players"),
-    axios.get("http://127.0.0.1:8000/players/teams").catch(() => ({ data: [] })),
-  ]).then(([playersRes, teamsRes]) => {
-    const data = playersRes.data || [];
-    const teamsMeta = teamsRes.data || [];
+    axios.get(`${API}/players`),
+    axios.get(`${API}/players/teams`).catch(() => ({ data: [] })),
+  ])
+    .then(([playersRes, teamsRes]) => {
+      const data = playersRes.data || [];
+      const teamsMeta = teamsRes.data || [];
 
-    const metaMap = {};
-    teamsMeta.forEach(t => {
-      if (t && t.team) {
-        metaMap[t.team] = {
-          tri_code: t.tri_code,
-          logo_url: t.logo_url,
-          display_name: t.display_name || t.team,
-        };
-      }
+      const metaMap = {};
+      teamsMeta.forEach(t => {
+        if (t && t.team) {
+          metaMap[t.team] = {
+            tri_code: t.tri_code,
+            logo_url: t.logo_url,
+            display_name: t.display_name || t.team,
+          };
+        }
+      });
+
+      const teamMap = {};
+      data.forEach(p => {
+        if (!p.team) return;
+        if (!teamMap[p.team]) {
+          teamMap[p.team] = {
+            team: p.team,
+            totalActual: 0,
+            totalMarket: 0,
+            ...(metaMap[p.team] || { display_name: p.team }),
+          };
+        }
+        if (!isGoalie(p.position)) {
+          teamMap[p.team].totalActual += p.aav || 0;
+          teamMap[p.team].totalMarket += p.market_value || 0;
+        }
+      });
+
+      setTeams(Object.values(teamMap).sort((a, b) => a.team.localeCompare(b.team)));
+      setApiError('');
+    })
+    .catch(() => {
+      setTeams([]);
+      setApiError('API unreachable at 127.0.0.1:8000. Start the backend to load team data.');
     });
-
-    const teamMap = {};
-    data.forEach(p => {
-      if (!p.team) return;
-      if (!teamMap[p.team]) {
-        teamMap[p.team] = {
-          team: p.team,
-          totalActual: 0,
-          totalMarket: 0,
-          ...(metaMap[p.team] || { display_name: p.team }),
-        };
-      }
-      if (!isGoalie(p.position)) {
-        teamMap[p.team].totalActual += p.aav || 0;
-        teamMap[p.team].totalMarket += p.market_value || 0;
-      }
-    });
-
-    setTeams(Object.values(teamMap).sort((a, b) => a.team.localeCompare(b.team)));
-  });
 
   axios
-    .get("http://127.0.0.1:8000/articles")
-    .then(res => setArticles(res.data.slice(0, 5)));
+    .get(`${API}/articles`)
+    .then(res => setArticles(res.data.slice(0, 5)))
+    .catch(() => {
+      setArticles([]);
+      setApiError((prev) => prev || 'API unreachable at 127.0.0.1:8000. Start the backend to load content.');
+    });
 }, []);
 
   function handleSort(col) {
@@ -133,6 +142,19 @@ export default function Home() {
       <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
       <div className="glass" style={{ flex: 1, padding: '24px' }}>
         <h2 style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 700 }}>Team Market Valuations</h2>
+        {apiError && (
+          <div style={{
+            marginBottom: '12px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background: 'rgba(239,68,68,0.14)',
+            border: '1px solid rgba(239,68,68,0.45)',
+            color: '#fecaca',
+            fontSize: '0.9rem'
+          }}>
+            {apiError}
+          </div>
+        )}
         <table>
           <thead>
             <tr>
@@ -168,7 +190,7 @@ export default function Home() {
           </tbody>
         </table>
       </div>
-      <div style={{ width: '280px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div className="glass" style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px' }}>
         <h3 style={{ fontWeight: 700, marginBottom: '8px' }}>
           <a href="/news" style={{ color: '#ffd700' }}>Articles</a>
         </h3>
@@ -183,18 +205,15 @@ export default function Home() {
               />
             )}
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, lineHeight: 1.25 }}>{a.title}</div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, lineHeight: 1.3 }}>{a.title}</div>
               {a.description && (
                 <div
                   style={{
-                    fontSize: '0.72rem',
+                    fontSize: '0.76rem',
                     color: 'rgba(255,255,255,0.6)',
-                    marginTop: '2px',
-                    lineHeight: 1.25,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden'
+                    marginTop: '4px',
+                    lineHeight: 1.35,
+                    whiteSpace: 'normal'
                   }}
                 >
                   {a.description}
