@@ -83,7 +83,7 @@ export default function Home() {
     })
     .catch(() => {
       setTeams([]);
-      setApiError('API unreachable at 127.0.0.1:8000. Start the backend to load team data.');
+      setApiError('API unreachable at https://api.rinkintel.net. Start or redeploy the backend to load team data.');
     });
 
   axios
@@ -91,7 +91,7 @@ export default function Home() {
     .then(res => setArticles(res.data.slice(0, 5)))
     .catch(() => {
       setArticles([]);
-      setApiError((prev) => prev || 'API unreachable at 127.0.0.1:8000. Start the backend to load content.');
+      setApiError((prev) => prev || 'API unreachable at https://api.rinkintel.net. Start or redeploy the backend to load content.');
     });
 }, []);
 
