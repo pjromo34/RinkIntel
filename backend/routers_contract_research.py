@@ -4,9 +4,7 @@ from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
 import json
-import math
 import sys
-import urllib.request
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -60,59 +58,41 @@ def _position_group(position: Optional[str]) -> str:
     return "F"
 
 
-@lru_cache(maxsize=2048)
-def _fetch_player_landing(nhl_player_id: Optional[str]) -> Dict:
-    if not nhl_player_id:
-        return {}
+def _shots_from_history(player: Player, current_games: float) -> float:
+    history = []
+    try:
+        parsed = json.loads(getattr(player, "season_history_json", None) or "[]")
+        if isinstance(parsed, list):
+            history = parsed
+    except Exception:
+        history = []
 
-    url = f"https://api-web.nhle.com/v1/player/{nhl_player_id}/landing"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-            "Referer": "https://www.nhl.com/",
-            "Origin": "https://www.nhl.com",
-        },
+    current_row = next(
+        (
+            row
+            for row in history
+            if isinstance(row, dict) and str(row.get("season")) == str(CURRENT_SEASON)
+        ),
+        None,
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            payload = json.load(response)
-            if isinstance(payload, dict):
-                return payload
-    except Exception:
-        return {}
-    return {}
+    if isinstance(current_row, dict):
+        for key in ("shots", "shots_on_goal", "sog"):
+            value = current_row.get(key)
+            if value is not None:
+                try:
+                    numeric = float(value)
+                    if numeric > 0:
+                        return numeric
+                except Exception:
+                    pass
 
-
-def _find_number_deep(obj, key_name: str) -> Optional[float]:
-    if isinstance(obj, dict):
-        for key, value in obj.items():
-            if str(key).lower() == key_name.lower() and isinstance(value, (int, float)):
-                return float(value)
-            child = _find_number_deep(value, key_name)
-            if child is not None:
-                return child
-    elif isinstance(obj, list):
-        for item in obj:
-            child = _find_number_deep(item, key_name)
-            if child is not None:
-                return child
-    return None
-
-
-def _age_from_birthdate(birth_date: Optional[str]) -> Optional[float]:
-    if not birth_date:
-        return None
-    try:
-        dob = datetime.strptime(str(birth_date), "%Y-%m-%d").date()
-    except Exception:
-        return None
-
-    today = date.today()
-    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-    return float(age)
+    # Keep this deterministic and cheap: approximate from available stored stats.
+    goals = float(player.goals or 0)
+    high_danger = float(player.high_danger_shots or 0)
+    games = max(1.0, current_games)
+    proxy = max(goals * 9.0, high_danger * 1.6, games * 1.8)
+    return float(proxy)
 
 
 def _games_for_risk(player: Player) -> float:
@@ -143,14 +123,8 @@ def _games_for_risk(player: Player) -> float:
 
 
 def _player_row(player: Player) -> Dict:
-    landing = _fetch_player_landing(str(player.nhl_player_id) if player.nhl_player_id else None)
-    age = _age_from_birthdate(landing.get("birthDate"))
-
-    shots = _find_number_deep(landing, "shots")
-    if shots is None:
-        shots = max(float(player.goals or 0) * 9.0, float(player.high_danger_shots or 0) * 2.0)
-
     games = float(player.games_played or 0)
+    shots = _shots_from_history(player, games)
     ppg = (float(player.points or 0) / games) if games > 0 else 0.0
 
     return {
@@ -175,7 +149,7 @@ def _player_row(player: Player) -> Dict:
         "onice_xgoals_pct": float(player.onice_xgoals_pct or 0),
         "aav": float(player.aav or 0),
         "market_value": float(player.market_value or 0),
-        "age": float(age if age is not None else 27.0),
+        "age": 27.0,
         "risk_games_played": float(_games_for_risk(player)),
     }
 
