@@ -1,8 +1,8 @@
 import os
 from datetime import datetime, timedelta
 import jwt
+import bcrypt
 
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
@@ -17,8 +17,6 @@ from backend.models_user import User
 SECRET = os.getenv("JWT_SECRET", "dev_secret_change_me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 # -------------------------------------------------------------------
@@ -26,10 +24,14 @@ security = HTTPBearer()
 # -------------------------------------------------------------------
 
 def hash_password(password: str) -> str:
-    return pwd_ctx.hash(password)
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_ctx.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except Exception:
+        return False
 
 # -------------------------------------------------------------------
 # TOKEN UTILS

@@ -510,7 +510,7 @@ export default function PlayerProfile() {
               { label: 'Goals', value: player.goals },
               { label: 'Assists', value: player.assists },
               { label: 'Points', value: player.points },
-              { label: 'xG', value: player.xg_all_situations?.toFixed(2) }
+              { label: 'xG', value: Number(player.xg_all_situations || 0).toFixed(2) }
             ].map(stat => (
               <div
                 key={stat.label}
