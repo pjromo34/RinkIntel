@@ -22,6 +22,7 @@ def get_db():
 
 # Import models so SQLAlchemy knows about them
 from backend.models import Player, Article
+from backend.models_user import User
 
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
