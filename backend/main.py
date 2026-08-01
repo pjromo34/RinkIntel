@@ -25,6 +25,7 @@ from threading import Thread, Event
 
 # Scheduler imports
 from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_TRICODE
+from backend.models import Player
 from backend.database import SessionLocal
 from backend.data_pipeline import run_full_pipeline
 from typing import Optional
@@ -123,6 +124,24 @@ def _start_scheduler():
         _scheduler_stop_event = Event()
         _scheduler_thread = Thread(target=_scheduler_loop, args=(_scheduler_stop_event,), daemon=True)
         _scheduler_thread.start()
+
+
+@app.on_event("startup")
+def _bootstrap_data():
+    db = SessionLocal()
+    try:
+        player_count = db.query(Player).count()
+        if player_count == 0:
+            teams = list(TEAM_NAME_TO_TRICODE.values())
+            perform_import_rosters(db, teams)
+            try:
+                run_full_pipeline()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    finally:
+        db.close()
 
 
 @app.on_event("shutdown")
