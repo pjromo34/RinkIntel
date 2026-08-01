@@ -3,10 +3,6 @@ function seasonStart(season) {
   return match ? Number(match[1]) : 0;
 }
 
-function seasonLabel(startYear) {
-  return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
-}
-
 function normalizePosition(position) {
   const p = String(position || '').toUpperCase();
   if (p === 'D') return 'D';
@@ -120,9 +116,8 @@ function buildTrackables(player, players, positionType) {
   const assists = Number(player.assists) || 0;
   const points = Number(player.points) || 0;
   const ppg = calcPpg(player);
-
   const team = player.team;
-  const onTeam = (p) => p.team === team;
+
   const forwards = (p) => normalizePosition(p.position) === 'F';
   const defense = (p) => normalizePosition(p.position) === 'D';
 
