@@ -48,6 +48,29 @@ COMP_WEIGHTS = {
 }
 
 
+def _prediction_to_dollars(raw_prediction: float, salary_cap: float) -> float:
+    """Normalize arbitration model output to dollars.
+
+    Historical arbitration artifacts have used different output units:
+    - cap share fraction (e.g. 0.048 == 4.8% of cap)
+    - millions of dollars (e.g. 4.2 == $4.2M)
+    """
+    value = float(raw_prediction or 0.0)
+    if value <= 0:
+        return 0.0
+
+    # Typical cap-share outputs are well below 0.30.
+    if value < 0.30:
+        return value * float(salary_cap)
+
+    # Typical millions outputs are single-digit to low double-digit values.
+    if value < 30.0:
+        return value * 1_000_000.0
+
+    # Fallback for already-denominated dollar outputs.
+    return value
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -177,12 +200,11 @@ def arbitration_predict(
     X_row = pd.DataFrame([[feature_row[c] for c in FEATURE_COLS]], columns=MODEL_FEATURE_COLS)
 
     try:
-        raw_prediction_millions = float(model.predict(X_row)[0])
+        raw_prediction = float(model.predict(X_row)[0])
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Arbitration prediction failed: {exc}")
 
-    # Arbitration model outputs AAV in millions of dollars.
-    raw_dollars = raw_prediction_millions * 1_000_000.0
+    raw_dollars = _prediction_to_dollars(raw_prediction, float(salary_cap))
 
     previous_season_pay = float(player.aav or 0)
     floor = 0.0
