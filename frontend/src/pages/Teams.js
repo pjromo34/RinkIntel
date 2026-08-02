@@ -42,6 +42,7 @@ export default function Teams() {
   const [salaryCap, setSalaryCap] = useState(95500000);
   const [sortBy, setSortBy] = useState('player_name');
   const [sortDir, setSortDir] = useState('asc');
+  const [isMobile, setIsMobile] = useState(false);
 
   const defaultLogo = `${API}/static/team_logos/default.svg`;
   const resolveLogoUrl = (url) => {
@@ -72,6 +73,13 @@ export default function Teams() {
       setSalaryCap(cap);
     });
   }, [teamCode]);
+
+  useEffect(() => {
+    const syncMobile = () => setIsMobile(window.innerWidth <= 1000);
+    syncMobile();
+    window.addEventListener('resize', syncMobile);
+    return () => window.removeEventListener('resize', syncMobile);
+  }, []);
 
   function handleSort(col) {
     if (sortBy === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -204,6 +212,7 @@ export default function Teams() {
           logoUrl={teamMeta?.logo_url}
           lineup={teamConstruction.layout}
           salaryCap={salaryCap}
+          compact={isMobile}
         />
       </div>
 

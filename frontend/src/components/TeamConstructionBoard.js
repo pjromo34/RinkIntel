@@ -105,7 +105,7 @@ function playerCard(player, salaryCap, accentColor, horizontal) {
 function ForwardGrid({ lineup, salaryCap, compareColors, horizontal }) {
   const rows = [0, 1, 2, 3];
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+    <div className={horizontal ? 'team-board-mobile-stack' : ''} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
       {rows.map((idx) => (
         <React.Fragment key={`f-${idx}`}>
           <div>{playerCard(lineup.forwards.LW[idx], salaryCap, compareColors?.[`LW${idx + 1}`], horizontal)}</div>
@@ -120,7 +120,7 @@ function ForwardGrid({ lineup, salaryCap, compareColors, horizontal }) {
 function DefenseGrid({ lineup, salaryCap, compareColors, horizontal }) {
   const rows = [0, 1, 2];
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+    <div className={horizontal ? 'team-board-mobile-stack' : ''} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
       {rows.map((row) => {
         const leftIdx = row * 2;
         const rightIdx = row * 2 + 1;
@@ -137,7 +137,7 @@ function DefenseGrid({ lineup, salaryCap, compareColors, horizontal }) {
 
 function GoalieGrid({ lineup, salaryCap, horizontal }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+    <div className={horizontal ? 'team-board-goalie-stack' : ''} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
       <div>{playerCard(lineup.goalies[0], salaryCap, null, horizontal)}</div>
       <div>{playerCard(lineup.goalies[1], salaryCap, null, horizontal)}</div>
     </div>
@@ -193,7 +193,7 @@ export default function TeamConstructionBoard({
   );
 
   return (
-    <div className="glass" style={{ padding: compact ? '14px' : '18px' }}>
+    <div className="glass team-construction-board" style={{ padding: compact ? '14px' : '18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
         {logoUrl ? (
           <img src={resolveImage(logoUrl)} alt={title} style={{ width: compact ? 34 : 42, height: compact ? 34 : 42 }} />

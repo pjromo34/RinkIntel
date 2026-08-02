@@ -20,6 +20,23 @@ function App() {
     <Router>
       <div className="app-shell" style={{ minHeight: '100vh', background: '#0f1923' }}>
         <nav className="top-nav">
+          <div className="mobile-nav-row">
+            <NavLink to="/" className={({ isActive }) => `nav-link mobile-primary-link${isActive ? ' active' : ''}`}>Home</NavLink>
+            <NavLink to="/news" className={({ isActive }) => `nav-link mobile-primary-link${isActive ? ' active' : ''}`}>News</NavLink>
+            <NavLink to="/players" className={({ isActive }) => `nav-link mobile-primary-link${isActive ? ' active' : ''}`}>Players</NavLink>
+
+            <details className="tools-dropdown">
+              <summary className="tools-summary">Tools</summary>
+              <div className="tools-menu glass">
+                <NavLink to="/bonuses" className={({ isActive }) => `nav-link tools-link${isActive ? ' active' : ''}`}>Performance Bonuses</NavLink>
+                <NavLink to="/team-construction-comparison" className={({ isActive }) => `nav-link tools-link${isActive ? ' active' : ''}`}>Team Construction Comparison</NavLink>
+                <NavLink to="/contract-research" className={({ isActive }) => `nav-link tools-link${isActive ? ' active' : ''}`}>Contract Research</NavLink>
+                <NavLink to="/arbitration" className={({ isActive }) => `nav-link tools-link${isActive ? ' active' : ''}`}>Arbitration Predictor</NavLink>
+                <NavLink to="/calculator" className={({ isActive }) => `nav-link tools-link${isActive ? ' active' : ''}`}>Performance Calculator</NavLink>
+              </div>
+            </details>
+          </div>
+
           <div className="nav-links-row">
             <NavLink to="/" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Home</NavLink>
             <NavLink to="/news" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>News</NavLink>

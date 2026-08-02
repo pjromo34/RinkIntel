@@ -136,6 +136,58 @@ button {
   white-space: nowrap;
 }
 
+.mobile-nav-row {
+  display: none;
+}
+
+.tools-dropdown {
+  position: relative;
+}
+
+.tools-summary {
+  list-style: none;
+  color: #ffd700;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 2px;
+}
+
+.tools-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tools-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 240px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(10, 18, 28, 0.98);
+  z-index: 1200;
+}
+
+.tools-link {
+  display: block;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.tools-link:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.comparison-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.team-construction-board {
+  overflow: hidden;
+}
+
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -143,27 +195,42 @@ button {
 
 @media (max-width: 1000px) {
   .top-nav {
-    flex-direction: column-reverse;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     padding: 12px 16px;
     gap: 10px;
   }
 
-  .nav-links-row {
-    width: 100%;
-    overflow-x: auto;
+  .mobile-nav-row {
+    display: flex;
+    align-items: center;
     gap: 16px;
-    padding-bottom: 6px;
-    scrollbar-width: none;
+    width: 100%;
   }
 
-  .nav-links-row::-webkit-scrollbar {
+  .mobile-primary-link {
+    white-space: nowrap;
+    font-size: 0.92rem;
+  }
+
+  .tools-dropdown {
+    margin-left: auto;
+  }
+
+  .tools-menu {
+    right: 0;
+    left: auto;
+    min-width: 220px;
+  }
+
+  .nav-links-row {
     display: none;
   }
 
   .nav-link {
     white-space: nowrap;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     padding: 6px 0;
   }
 
@@ -200,6 +267,25 @@ button {
   .contract-top-grid,
   .contract-mid-grid,
   .contract-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .comparison-layout {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .comparison-cap-card {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
+  .team-board-mobile-stack {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .team-board-goalie-stack {
     grid-template-columns: 1fr !important;
   }
 

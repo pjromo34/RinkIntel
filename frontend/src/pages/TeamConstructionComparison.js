@@ -221,7 +221,7 @@ export default function TeamConstructionComparison() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px 1fr', gap: '14px', alignItems: 'start' }}>
+      <div className="comparison-layout">
         <TeamConstructionBoard
           title={activePair.a || 'Team A'}
           logoUrl={teamMetaByName[activePair.a]?.logo_url}
@@ -231,7 +231,7 @@ export default function TeamConstructionComparison() {
           compact
         />
 
-        <div className="glass" style={{ padding: '14px' }}>
+        <div className="glass comparison-cap-card" style={{ padding: '14px' }}>
           <h3 style={{ textAlign: 'center', fontSize: '0.98rem', marginBottom: '8px', color: '#ffd700' }}>Cap Allocation Comparison</h3>
           <StatRow label="Forwards" left={lineupA.breakdown.forwards_cap_pct} right={lineupB.breakdown.forwards_cap_pct} />
           <StatRow label="Defense" left={lineupA.breakdown.defense_cap_pct} right={lineupB.breakdown.defense_cap_pct} />
