@@ -321,7 +321,7 @@ export default function Players() {
   }
 
   return (
-    <div style={{ padding: '32px 40px' }}>
+    <div className="players-page" style={{ padding: '32px 40px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <button
           onClick={() => navigate('/')}
@@ -341,6 +341,7 @@ export default function Players() {
 
       <div className="glass" style={{ padding: '24px' }}>
         <div
+          className="players-filters-grid"
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(3, minmax(220px, 1fr))',
@@ -488,6 +489,7 @@ export default function Players() {
           </div>
         </div>
 
+        <div className="table-scroll">
         <table>
           <thead>
             <tr>
@@ -542,6 +544,7 @@ export default function Players() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -18,19 +18,9 @@ import './index.css';
 function App() {
   return (
     <Router>
-      <div style={{ minHeight: '100vh', background: '#0f1923' }}>
-        <nav style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 40px',
-          borderBottom: '1px solid rgba(18, 15, 15, 0.08)',
-          background: 'rgba(15,25,35,0.95)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100
-        }}>
-          <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
+      <div className="app-shell" style={{ minHeight: '100vh', background: '#0f1923' }}>
+        <nav className="top-nav">
+          <div className="nav-links-row">
             <NavLink to="/" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Home</NavLink>
             <NavLink to="/news" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>News</NavLink>
             <NavLink to="/players" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Players</NavLink>
@@ -40,7 +30,7 @@ function App() {
             <NavLink to="/arbitration" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Arbitration Predictor</NavLink>
             <NavLink to="/calculator" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Performance Calculator</NavLink>
           </div>
-          <div style={{ fontWeight: 800, fontSize: '1.4rem', letterSpacing: '0.05em', color: '#ffd700' }}>
+          <div className="brand-wordmark">
             RINKINTEL
           </div>
         </nav>

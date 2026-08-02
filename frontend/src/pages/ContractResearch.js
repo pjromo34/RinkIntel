@@ -71,7 +71,7 @@ export default function ContractResearch() {
   }
 
   return (
-    <div style={{ padding: '24px 30px' }}>
+    <div className="contract-page" style={{ padding: '24px 30px' }}>
       <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginBottom: '12px' }}>Contract Research</h2>
 
       <div className="glass" style={{ padding: '16px', marginBottom: '14px' }}>
@@ -156,7 +156,7 @@ export default function ContractResearch() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0,1fr))', gap: '8px', marginBottom: '12px' }}>
+          <div className="contract-top-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0,1fr))', gap: '8px', marginBottom: '12px' }}>
             {[
               ['Goals', report.key_stats.goals],
               ['Assists', report.key_stats.assists],
@@ -174,7 +174,7 @@ export default function ContractResearch() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
+          <div className="contract-mid-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
             {['goals', 'assists', 'points'].map((statKey) => (
               <div key={statKey} className="glass" style={{ padding: '10px' }}>
                 <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.68)', marginBottom: '6px', textTransform: 'uppercase' }}>{statKey} comparables</div>
@@ -198,7 +198,7 @@ export default function ContractResearch() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '12px' }}>
+          <div className="contract-bottom-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '12px' }}>
             {[
               ['xg_all_situations', 'xG'],
               ['shots', 'shots'],

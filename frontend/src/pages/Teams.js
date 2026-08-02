@@ -126,7 +126,7 @@ export default function Teams() {
   const teamConstruction = useMemo(() => buildTeamConstruction(players, salaryCap), [players, salaryCap]);
 
   return (
-    <div style={{ padding: '32px 40px' }}>
+    <div className="teams-page" style={{ padding: '32px 40px' }}>
       <div
         style={{
           display: 'flex',
@@ -162,6 +162,7 @@ export default function Teams() {
       </div>
 
       <div
+        className="teams-summary-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
@@ -207,6 +208,7 @@ export default function Teams() {
       </div>
 
       <div className="glass" style={{ padding: '24px' }}>
+        <div className="table-scroll">
         <table>
           <thead>
             <tr>
@@ -266,6 +268,7 @@ export default function Teams() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {isPacedSeason && (

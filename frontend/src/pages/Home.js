@@ -139,9 +139,9 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '32px 40px' }}>
-      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-      <div className="glass" style={{ flex: 1, padding: '24px' }}>
+    <div className="home-page" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '32px 40px' }}>
+      <div className="home-top-row" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+      <div className="glass home-main-card" style={{ flex: 1, padding: '24px' }}>
         <h2 style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 700 }}>Team Market Valuations</h2>
         {apiError && (
           <div style={{
@@ -156,6 +156,7 @@ export default function Home() {
             {apiError}
           </div>
         )}
+        <div className="table-scroll">
         <table>
           <thead>
             <tr>
@@ -190,8 +191,9 @@ export default function Home() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
-      <div className="glass" style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px' }}>
+      <div className="glass home-articles-card" style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px' }}>
         <h3 style={{ fontWeight: 700, marginBottom: '8px' }}>
           <a href="/news" style={{ color: '#ffd700' }}>Articles</a>
         </h3>
