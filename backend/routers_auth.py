@@ -6,6 +6,7 @@ from backend.auth import (
     hash_password,
     create_access_token,
     get_db,
+    get_current_user,
 )
 from backend.models_user import User
 
@@ -60,3 +61,29 @@ def register_admin(data: dict, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Admin user created"}
+
+
+@router.post("/change-password")
+def change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+
+    if not current_password or not new_password:
+        raise HTTPException(status_code=400, detail="Current password and new password are required")
+
+    if len(str(new_password)) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    try:
+        password_ok = verify_password(current_password, user.password_hash)
+    except Exception:
+        password_ok = False
+
+    if not password_ok:
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    user.password_hash = hash_password(str(new_password))
+    db.add(user)
+    db.commit()
+
+    return {"message": "Password updated"}
