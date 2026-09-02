@@ -161,7 +161,7 @@ export default function Home() {
           <thead>
             <tr>
               <SortHeader col="team" label="Team" />
-              <SortHeader col="totalActual" label="Actual Cap Hit" />
+              <SortHeader col="totalActual" label="Active Roster Cap Hit" />
               <SortHeader col="totalMarket" label="Market Value" />
               <SortHeader col="difference" label="Difference" />
               <SortHeader col="status" label="Status" />
