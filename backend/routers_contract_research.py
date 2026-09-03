@@ -98,16 +98,7 @@ def _position_group(position: Optional[str]) -> str:
 
 
 def _similarity_position_group(position: Optional[str]) -> str:
-    pos = str(position or "").strip().upper()
-    if pos == "D":
-        return "D"
-    if pos in {"G", "GOALIE", "GOALTENDER"}:
-        return "G"
-    if pos in {"C", "CENTER"}:
-        return "C"
-    if pos in {"L", "LW", "LEFT WING", "R", "RW", "RIGHT WING", "W", "WING"}:
-        return "W"
-    return "W"
+    return _position_group(position)
 
 
 def _shots_from_history(player: Player, current_games: float) -> float:
@@ -542,7 +533,7 @@ def recompute_contract_research_comparables(db: Session, top_n: int = 10) -> Dic
     players = db.query(Player).filter(Player.active_roster.is_(True)).all()
     all_rows = [_player_row(p) for p in players if _position_group(p.position) in {"F", "D"}]
 
-    rows_by_group: Dict[str, List[Dict]] = {"C": [], "W": [], "D": []}
+    rows_by_group: Dict[str, List[Dict]] = {"F": [], "D": []}
     for row in all_rows:
         similarity_position = row.get("similarity_position")
         if similarity_position in rows_by_group:
@@ -551,7 +542,7 @@ def recompute_contract_research_comparables(db: Session, top_n: int = 10) -> Dic
     by_id = {int(p.id): p for p in players}
     updated = 0
 
-    for group in ("C", "W", "D"):
+    for group in ("F", "D"):
         group_rows = rows_by_group[group]
         if len(group_rows) < 2:
             continue
