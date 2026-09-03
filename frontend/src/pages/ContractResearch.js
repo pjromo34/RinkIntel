@@ -195,9 +195,9 @@ export default function ContractResearch() {
                       <img src={resolveImage(p.headshot_url)} alt={p.player_name} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover' }} />
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700, fontSize: '1rem' }}>{p.player_name}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                       <img src={resolveImage(p.team_logo_url)} alt={p.team} style={{ width: 96, height: 96 }} />
-                      <span style={{ fontSize: '1rem' }}>{p.team}</span>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700, fontSize: '1rem' }}>{p.team}</span>
                     </div>
                     <div style={{ fontSize: '0.84rem', fontWeight: 800, color: similarityColor(p.match_score) }}>{Number(p.match_score || 0).toFixed(1)}% match</div>
                     <div style={{ color: '#ffd700', fontWeight: 800 }}>{money(p.aav)}</div>

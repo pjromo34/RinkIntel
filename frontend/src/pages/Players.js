@@ -512,6 +512,15 @@ export default function Players() {
           </div>
         </div>
 
+        <div
+          className="glass"
+          style={{ padding: '12px 14px', marginBottom: '14px', border: '1px solid rgba(255,255,255,0.12)' }}
+        >
+          <div style={{ fontSize: '0.84rem', color: 'rgba(255,255,255,0.82)', lineHeight: 1.5 }}>
+            Puck Possession Score (PPS) is calculated by taking a player's points per 60 and adding a possession adjustment based on how far their Corsi% is above or below league average: points/60 + ((Corsi% - league-average Corsi%) x 10). The stat is meant to simultaneously account for how proficient a player is at controlling the puck and producing.
+          </div>
+        </div>
+
         <div className="table-scroll">
         <table>
           <thead>
