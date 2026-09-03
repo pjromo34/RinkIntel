@@ -49,11 +49,22 @@ function roundXgMax(value) {
   return Math.max(1, rounded);
 }
 
-function computePpsValue(player) {
+function computeLeagueAverageCorsi(players) {
+  const corsiValues = (Array.isArray(players) ? players : [])
+    .map((player) => Number(player?.onice_corsi_pct))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!corsiValues.length) return 50;
+
+  const total = corsiValues.reduce((sum, value) => sum + value, 0);
+  return total / corsiValues.length;
+}
+
+function computePpsValue(player, leagueAvgCorsi) {
   const points = Number(player?.points) || 0;
-  const takeaways = Number(player?.takeaways) || 0;
-  const giveaways = Number(player?.giveaways) || 0;
-  return (points + (takeaways - giveaways)) / 60;
+  const corsiPct = Number(player?.onice_corsi_pct) || 0;
+  const scaledCorsi = (corsiPct - leagueAvgCorsi) * 10;
+  return points / 60 + scaledCorsi;
 }
 
 function DualRangeFilter({ label, min, max, step, value, onChange, formatValue }) {
@@ -220,9 +231,11 @@ export default function Players() {
       axios.get(`${API}/players`),
       axios.get(`${API}/players/teams`).catch(() => ({ data: [] })),
     ]).then(([playersRes, teamsRes]) => {
-      const loadedPlayers = (playersRes.data || []).map((player) => ({
+      const rawPlayers = playersRes.data || [];
+      const leagueAvgCorsi = computeLeagueAverageCorsi(rawPlayers);
+      const loadedPlayers = rawPlayers.map((player) => ({
         ...player,
-        pps: computePpsValue(player),
+        pps: computePpsValue(player, leagueAvgCorsi),
       }));
       setPlayers(loadedPlayers);
       const map = {};
