@@ -192,12 +192,12 @@ export default function ContractResearch() {
                   <div style={{ display: 'grid', gridTemplateColumns: '48px 1.5fr 1fr auto auto', gap: '8px', alignItems: 'center', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '8px', textAlign: 'left' }}>
                     <div style={{ fontWeight: 900, color: 'rgba(255,255,255,0.9)', textAlign: 'center' }}>#{Number(p.rank) || 0}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                      <img src={resolveImage(p.headshot_url)} alt={p.player_name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700 }}>{p.player_name}</span>
+                      <img src={resolveImage(p.headshot_url)} alt={p.player_name} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover' }} />
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700, fontSize: '1rem' }}>{p.player_name}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <img src={resolveImage(p.team_logo_url)} alt={p.team} style={{ width: 20, height: 20 }} />
-                      <span style={{ fontSize: '0.84rem' }}>{p.team}</span>
+                      <img src={resolveImage(p.team_logo_url)} alt={p.team} style={{ width: 96, height: 96 }} />
+                      <span style={{ fontSize: '1rem' }}>{p.team}</span>
                     </div>
                     <div style={{ fontSize: '0.84rem', fontWeight: 800, color: similarityColor(p.match_score) }}>{Number(p.match_score || 0).toFixed(1)}% match</div>
                     <div style={{ color: '#ffd700', fontWeight: 800 }}>{money(p.aav)}</div>
