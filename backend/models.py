@@ -34,6 +34,7 @@ class Player(Base):
     contract_start_season = Column(String, nullable=True)
     contracts_json = Column(String, nullable=True)
     season_history_json = Column(String, nullable=True)
+    contract_similarity_json = Column(String, nullable=True)
     nhl_player_id = Column(String, nullable=True)
     uploaded_headshot_url = Column(String, nullable=True)
 

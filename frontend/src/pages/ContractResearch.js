@@ -20,6 +20,12 @@ function riskColor(percentile) {
   return `hsl(${hue}, 75%, 48%)`;
 }
 
+function similarityColor(score) {
+  const s = Math.max(0, Math.min(100, Number(score) || 0));
+  const hue = (s / 100) * 120;
+  return `hsl(${hue}, 82%, 48%)`;
+}
+
 function resolveImage(url) {
   if (!url) return DEFAULT_HEADSHOT;
   if (url.startsWith('/static/')) return `${API}${url}`;
@@ -174,68 +180,17 @@ export default function ContractResearch() {
             ))}
           </div>
 
-          <div className="contract-mid-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
-            {['goals', 'assists', 'points'].map((statKey) => (
-              <div key={statKey} className="glass" style={{ padding: '10px' }}>
-                <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.68)', marginBottom: '6px', textTransform: 'uppercase' }}>{statKey} comparables</div>
-                {(report.stat_comparables?.[statKey] || []).map((p) => (
-                  <button
-                    key={`${statKey}-${p.id}`}
-                    onClick={() => navigate(`/player/${encodeURIComponent(p.player_name)}?id=${p.id}`)}
-                    style={{ width: '100%', border: 'none', background: 'transparent', padding: 0, color: '#fff', cursor: 'pointer', font: 'inherit' }}
-                  >
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '8px', alignItems: 'center', marginBottom: '6px', textAlign: 'left' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                        <img src={resolveImage(p.headshot_url)} alt={p.player_name} style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }} />
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.player_name}</span>
-                      </div>
-                      <span style={{ color: 'rgba(255,255,255,0.8)' }}>{Math.round(p.value)}</span>
-                      <span style={{ color: '#ffd700', fontWeight: 700 }}>{money(p.aav)}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-
-          <div className="contract-bottom-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '12px' }}>
-            {[
-              ['xg_all_situations', 'xG'],
-              ['shots', 'shots'],
-              ['hits', 'hits'],
-            ].map(([statKey, label]) => (
-              <div key={statKey} className="glass" style={{ padding: '10px' }}>
-                <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.68)', marginBottom: '6px', textTransform: 'uppercase' }}>{label} comparables</div>
-                {(report.stat_comparables?.[statKey] || []).map((p) => (
-                  <button
-                    key={`${statKey}-${p.id}`}
-                    onClick={() => navigate(`/player/${encodeURIComponent(p.player_name)}?id=${p.id}`)}
-                    style={{ width: '100%', border: 'none', background: 'transparent', padding: 0, color: '#fff', cursor: 'pointer', font: 'inherit' }}
-                  >
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '8px', alignItems: 'center', marginBottom: '6px', textAlign: 'left' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                        <img src={resolveImage(p.headshot_url)} alt={p.player_name} style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }} />
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.player_name}</span>
-                      </div>
-                      <span style={{ color: 'rgba(255,255,255,0.8)' }}>{statKey === 'xg_all_situations' ? Number(p.value || 0).toFixed(2) : Math.round(p.value)}</span>
-                      <span style={{ color: '#ffd700', fontWeight: 700 }}>{money(p.aav)}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-
           <div className="glass" style={{ padding: '10px' }}>
-            <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.7)', marginBottom: '8px' }}>Comparable Players</div>
+            <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.7)', marginBottom: '8px' }}>Comparable Players (Top 10)</div>
             <div style={{ display: 'grid', gap: '8px' }}>
-              {(report.overall_similars || []).map((p) => (
+              {(report.comparables || []).map((p) => (
                 <button
                   key={p.id}
                   onClick={() => navigate(`/player/${encodeURIComponent(p.player_name)}?id=${p.id}`)}
                   style={{ width: '100%', border: 'none', background: 'transparent', padding: 0, color: '#fff', cursor: 'pointer', font: 'inherit' }}
                 >
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr auto', gap: '8px', alignItems: 'center', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '8px', textAlign: 'left' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '48px 1.5fr 1fr auto auto', gap: '8px', alignItems: 'center', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '8px', textAlign: 'left' }}>
+                    <div style={{ fontWeight: 900, color: 'rgba(255,255,255,0.9)', textAlign: 'center' }}>#{Number(p.rank) || 0}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                       <img src={resolveImage(p.headshot_url)} alt={p.player_name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700 }}>{p.player_name}</span>
@@ -244,7 +199,7 @@ export default function ContractResearch() {
                       <img src={resolveImage(p.team_logo_url)} alt={p.team} style={{ width: 20, height: 20 }} />
                       <span style={{ fontSize: '0.84rem' }}>{p.team}</span>
                     </div>
-                    <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.8)' }}>{(p.similar_stats || []).join(', ')}</div>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 800, color: similarityColor(p.match_score) }}>{Number(p.match_score || 0).toFixed(1)}% match</div>
                     <div style={{ color: '#ffd700', fontWeight: 800 }}>{money(p.aav)}</div>
                   </div>
                 </button>

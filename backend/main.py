@@ -21,6 +21,7 @@ from backend.routers_auth import router as auth_router
 from backend.routers_simulation import router as simulation_router
 from backend.routers_arbitration import router as arbitration_router
 from backend.routers_contract_research import router as contract_research_router
+from backend.routers_contract_research import recompute_contract_research_comparables
 from threading import Thread, Event
 
 # Scheduler imports
@@ -150,6 +151,7 @@ def _scheduler_loop(stop_event: Event):
         try:
             teams = list(TEAM_NAME_TO_TRICODE.values())
             perform_import_rosters(db, teams)
+            recompute_contract_research_comparables(db, top_n=10)
         except Exception:
             pass
         finally:
@@ -180,6 +182,11 @@ def _bootstrap_data():
                 run_market_value_pipeline()
             except Exception:
                 pass
+
+        try:
+            recompute_contract_research_comparables(db, top_n=10)
+        except Exception:
+            pass
 
         db.query(Article).filter(Article.title.in_(SEED_ARTICLE_TITLES)).delete(synchronize_session=False)
         db.commit()

@@ -56,6 +56,11 @@ with engine.begin() as conn:
     )
     conn.execute(
         text(
+            "ALTER TABLE players ADD COLUMN IF NOT EXISTS contract_similarity_json TEXT"
+        )
+    )
+    conn.execute(
+        text(
             "ALTER TABLE players ADD COLUMN IF NOT EXISTS high_danger_shots DOUBLE PRECISION NOT NULL DEFAULT 0"
         )
     )

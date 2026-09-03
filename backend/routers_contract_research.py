@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import CURRENT_SEASON
 from backend.database import SessionLocal
+from backend.model_loader import get_models
 from backend.models import Player
 from backend.routers_players import TEAM_NAME_TO_TRICODE_SIMPLE
 
@@ -24,6 +25,20 @@ if str(RISK_DIR) not in sys.path:
 from risk_score import compute_risk_scores  # type: ignore
 
 router = APIRouter(prefix="/contract-research", tags=["contract-research"])
+
+SIMILARITY_FEATURE_MAP = [
+    ("onice_fenwick_pct", "onIce_fenwickPercentage"),
+    ("onice_corsi_pct", "onIce_corsiPercentage"),
+    ("onice_xgoals_pct", "onIce_xGoalsPercentage"),
+    ("goals", "I_F_goals"),
+    ("primary_assists", "I_F_primaryAssists"),
+    ("icetime", "icetime"),
+    ("takeaways", "I_F_takeaways"),
+    ("hits", "I_F_hits"),
+    ("dzone_giveaways", "I_F_dZoneGiveaways"),
+    ("giveaways", "I_F_giveaways"),
+]
+SIMILARITY_STATS = [row_key for row_key, _ in SIMILARITY_FEATURE_MAP]
 
 
 def get_db():
@@ -163,53 +178,146 @@ def _team_logo_url(team_name: Optional[str]) -> Optional[str]:
     return None
 
 
-def _stat_comparables(candidates: List[Dict], target: Dict, stat: str, n: int = 3) -> List[Dict]:
-    ranked = sorted(
-        candidates,
-        key=lambda row: (
-            abs(float(row.get(stat, 0)) - float(target.get(stat, 0))),
-            abs(float(row.get("aav", 0)) - float(target.get("aav", 0))),
-            row.get("player_name", ""),
-        ),
+def _safe_numeric(value: object) -> float:
+    try:
+        return float(value or 0)
+    except Exception:
+        return 0.0
+
+
+def _extract_model_weights(model: object, position_group: str) -> Dict[str, float]:
+    model_keys = [model_key for _, model_key in SIMILARITY_FEATURE_MAP]
+    row_keys = [row_key for row_key, _ in SIMILARITY_FEATURE_MAP]
+    raw_weights = np.zeros(len(model_keys), dtype=float)
+
+    try:
+        names = list(getattr(model, "feature_names_in_", []))
+        importances = np.asarray(getattr(model, "feature_importances_", []), dtype=float)
+        if names and importances.size == len(names):
+            by_name = {str(name): abs(float(weight)) for name, weight in zip(names, importances)}
+            raw_weights = np.array([by_name.get(key, 0.0) for key in model_keys], dtype=float)
+    except Exception:
+        raw_weights = np.zeros(len(model_keys), dtype=float)
+
+    if raw_weights.sum() <= 0:
+        raw_weights = np.ones(len(model_keys), dtype=float)
+
+    normalized = raw_weights / raw_weights.sum()
+    return {row_key: float(weight) for row_key, weight in zip(row_keys, normalized)}
+
+
+@lru_cache(maxsize=2)
+def _position_weights(position_group: str) -> Dict[str, float]:
+    model_map = get_models()
+    model = model_map["def"] if position_group == "D" else model_map["fwd"]
+    return _extract_model_weights(model, position_group)
+
+
+def _feature_norms(group_rows: List[Dict]) -> tuple[pd.Series, pd.Series]:
+    frame = pd.DataFrame(
+        [{key: _safe_numeric(row.get(key)) for key in SIMILARITY_STATS} for row in group_rows]
     )
-    out = []
-    for row in ranked[:n]:
+    means = frame.mean(axis=0)
+    stds = frame.std(axis=0, ddof=0).replace(0, 1).fillna(1)
+    return means, stds
+
+
+def _weighted_distance(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> float:
+    total = 0.0
+    for key in SIMILARITY_STATS:
+        a_z = (_safe_numeric(a.get(key)) - _safe_numeric(means.get(key))) / _safe_numeric(stds.get(key) or 1)
+        b_z = (_safe_numeric(b.get(key)) - _safe_numeric(means.get(key))) / _safe_numeric(stds.get(key) or 1)
+        delta = a_z - b_z
+        total += _safe_numeric(weights.get(key)) * (delta * delta)
+    return float(np.sqrt(total))
+
+
+def _score_from_distance(distance: float, max_distance: float) -> float:
+    if max_distance <= 0:
+        return 100.0
+    score = 100.0 * (1.0 - (distance / max_distance))
+    return float(max(0.0, min(100.0, score)))
+
+
+def _top_similar_players(
+    group_rows: List[Dict],
+    target_row: Dict,
+    position_group: str,
+    n: int = 10,
+) -> List[Dict]:
+    candidates = [row for row in group_rows if int(row["player_id"]) != int(target_row["player_id"])]
+    if not candidates:
+        return []
+
+    means, stds = _feature_norms(group_rows)
+    weights = _position_weights(position_group)
+
+    ranked = []
+    for row in candidates:
+        dist = _weighted_distance(row, target_row, means, stds, weights)
+        ranked.append((dist, row))
+
+    ranked.sort(key=lambda item: (item[0], item[1].get("player_name", "")))
+    top = ranked[:n]
+    max_distance = max((item[0] for item in top), default=0.0)
+
+    out: List[Dict] = []
+    for idx, (dist, row) in enumerate(top, start=1):
         out.append(
             {
+                "rank": idx,
                 "id": int(row["player_id"]),
                 "player_name": row["player_name"],
                 "team": row["team"],
                 "team_logo_url": _team_logo_url(row.get("team")),
-                "headshot_url": row["headshot_url"],
+                "headshot_url": row.get("headshot_url"),
                 "aav": float(row.get("aav") or 0),
-                "value": float(row.get(stat) or 0),
+                "match_score": round(_score_from_distance(dist, max_distance), 1),
             }
         )
     return out
 
 
-def _overall_similars(candidates: List[Dict], target: Dict, n: int = 5) -> List[Dict]:
-    if not candidates:
+def _parse_json_list(raw: Optional[str]) -> List[Dict]:
+    if not raw:
         return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [row for row in parsed if isinstance(row, dict)]
 
-    features = [
-        "goals",
-        "assists",
-        "points",
-        "xg_all_situations",
-        "shots",
-        "points_per_game",
-        "hits",
-        "giveaways",
-        "takeaways",
-        "onice_corsi_pct",
-        "onice_fenwick_pct",
-        "onice_xgoals_pct",
-    ]
 
-    df = pd.DataFrame(candidates + [target])
-    means = df[features].mean(axis=0)
-    stds = df[features].std(axis=0, ddof=0).replace(0, 1)
+def recompute_contract_research_comparables(db: Session, top_n: int = 10) -> Dict[str, int]:
+    players = db.query(Player).filter(Player.active_roster.is_(True)).all()
+    all_rows = [_player_row(p) for p in players if _position_group(p.position) in {"F", "D"}]
+
+    rows_by_group: Dict[str, List[Dict]] = {"F": [], "D": []}
+    for row in all_rows:
+        rows_by_group[row["position"]].append(row)
+
+    by_id = {int(p.id): p for p in players}
+    updated = 0
+
+    for group in ("F", "D"):
+        group_rows = rows_by_group[group]
+        if len(group_rows) < 2:
+            continue
+
+        for target in group_rows:
+            player_obj = by_id.get(int(target["player_id"]))
+            if player_obj is None:
+                continue
+
+            similars = _top_similar_players(group_rows, target, group, top_n)
+            player_obj.contract_similarity_json = json.dumps(similars)
+            db.add(player_obj)
+            updated += 1
+
+    db.commit()
+    return {"updated": updated, "eligible": len(all_rows)}
 
     target_vec = ((df.iloc[-1][features] - means) / stds).to_numpy(dtype=float)
     dist_rows = []
@@ -299,12 +407,15 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if target_row is None:
         raise HTTPException(status_code=404, detail="Target data not available")
 
-    candidate_rows = [
-        row
-        for row in all_rows
-        if int(row["player_id"]) != int(player_id)
-        and row["position"] == target_group
-    ]
+    stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
+    if not stored_similars:
+        recompute_contract_research_comparables(db, top_n=10)
+        db.refresh(target_player)
+        stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
+
+    if not stored_similars:
+        target_group_rows = [row for row in all_rows if row["position"] == target_group]
+        stored_similars = _top_similar_players(target_group_rows, target_row, target_group, n=10)
 
     risk_input = pd.DataFrame(
         [
@@ -347,15 +458,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
             "giveaways": float(target_row["giveaways"]),
             "takeaways": float(target_row["takeaways"]),
         },
-        "stat_comparables": {
-            "goals": _stat_comparables(candidate_rows, target_row, "goals", 3),
-            "assists": _stat_comparables(candidate_rows, target_row, "assists", 3),
-            "points": _stat_comparables(candidate_rows, target_row, "points", 3),
-            "xg_all_situations": _stat_comparables(candidate_rows, target_row, "xg_all_situations", 3),
-            "shots": _stat_comparables(candidate_rows, target_row, "shots", 3),
-            "hits": _stat_comparables(candidate_rows, target_row, "hits", 3),
-        },
-        "overall_similars": _overall_similars(candidate_rows, target_row, 5),
+        "comparables": stored_similars[:10],
     }
 
     return response
