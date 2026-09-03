@@ -51,6 +51,18 @@ SIMILARITY_LABELS = {
     "dzone_giveaways": "defensive-zone puck management",
     "giveaways": "turnover control",
 }
+SIMILARITY_FORMATTERS = {
+    "onice_fenwick_pct": lambda value: f"{_safe_numeric(value):.1f}%",
+    "onice_corsi_pct": lambda value: f"{_safe_numeric(value):.1f}%",
+    "onice_xgoals_pct": lambda value: f"{_safe_numeric(value):.1f}%",
+    "goals": lambda value: str(int(round(_safe_numeric(value)))),
+    "primary_assists": lambda value: str(int(round(_safe_numeric(value)))),
+    "icetime": lambda value: str(int(round(_safe_numeric(value)))),
+    "takeaways": lambda value: str(int(round(_safe_numeric(value)))),
+    "hits": lambda value: str(int(round(_safe_numeric(value)))),
+    "dzone_giveaways": lambda value: str(int(round(_safe_numeric(value)))),
+    "giveaways": lambda value: str(int(round(_safe_numeric(value)))),
+}
 
 
 def get_db():
@@ -83,6 +95,19 @@ def _position_group(position: Optional[str]) -> str:
     if pos in {"G", "GOALIE", "GOALTENDER"}:
         return "G"
     return "F"
+
+
+def _similarity_position_group(position: Optional[str]) -> str:
+    pos = str(position or "").strip().upper()
+    if pos == "D":
+        return "D"
+    if pos in {"G", "GOALIE", "GOALTENDER"}:
+        return "G"
+    if pos in {"C", "CENTER"}:
+        return "C"
+    if pos in {"L", "LW", "LEFT WING", "R", "RW", "RIGHT WING", "W", "WING"}:
+        return "W"
+    return "W"
 
 
 def _shots_from_history(player: Player, current_games: float) -> float:
@@ -159,6 +184,7 @@ def _player_row(player: Player) -> Dict:
         "player_name": player.player_name,
         "team": player.team,
         "position": _position_group(player.position),
+        "similarity_position": _similarity_position_group(player.position),
         "raw_position": player.position,
         "headshot_url": player.headshot_url,
         "goals": float(player.goals or 0),
@@ -269,6 +295,20 @@ def _score_from_distribution(distance: float, all_distances: List[float]) -> flo
     return float(max(0.0, min(100.0, score)))
 
 
+def _informative_stat_count(a: Dict, b: Dict) -> int:
+    return sum(1 for key in SIMILARITY_STATS if _stat_has_signal(key, a, b))
+
+
+def _coverage_adjusted_score(raw_score: float, informative_count: int) -> float:
+    if informative_count <= 2:
+        return 50.0 + ((raw_score - 50.0) * 0.45)
+    if informative_count <= 4:
+        return 50.0 + ((raw_score - 50.0) * 0.7)
+    if informative_count <= 6:
+        return 50.0 + ((raw_score - 50.0) * 0.85)
+    return raw_score
+
+
 def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> List[str]:
     ranked = []
     for key in SIMILARITY_STATS:
@@ -291,6 +331,60 @@ def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, wei
     return labels
 
 
+def _stat_has_signal(key: str, a: Dict, b: Dict) -> bool:
+    return not (_safe_numeric(a.get(key)) == 0 and _safe_numeric(b.get(key)) == 0)
+
+
+def _top_similarity_details(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> List[Dict[str, str]]:
+    ranked = []
+    for key in SIMILARITY_STATS:
+        std = _safe_numeric(stds.get(key) or 1)
+        if std <= 0:
+            std = 1.0
+        delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
+        weight = _safe_numeric(weights.get(key))
+        closeness = weight / (1.0 + delta)
+        ranked.append((closeness, weight, key, _stat_has_signal(key, a, b)))
+
+    ranked.sort(key=lambda item: (item[3], item[0], item[1]), reverse=True)
+    details: List[Dict[str, str]] = []
+    for _, _, key, has_signal in ranked:
+        if not has_signal:
+            continue
+        label = SIMILARITY_LABELS.get(key)
+        formatter = SIMILARITY_FORMATTERS.get(key, lambda value: str(value))
+        if not label:
+            continue
+        details.append(
+            {
+                "label": label,
+                "target_value": formatter(b.get(key)),
+                "comp_value": formatter(a.get(key)),
+            }
+        )
+        if len(details) == 3:
+            break
+
+    if details:
+        return details
+
+    for _, _, key, _ in ranked:
+        label = SIMILARITY_LABELS.get(key)
+        formatter = SIMILARITY_FORMATTERS.get(key, lambda value: str(value))
+        if not label:
+            continue
+        details.append(
+            {
+                "label": label,
+                "target_value": formatter(b.get(key)),
+                "comp_value": formatter(a.get(key)),
+            }
+        )
+        if len(details) == 2:
+            break
+    return details
+
+
 def _difference_driver(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> Optional[str]:
     ranked = []
     for key in SIMILARITY_STATS:
@@ -308,6 +402,40 @@ def _difference_driver(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
     return SIMILARITY_LABELS.get(ranked[0][1])
 
 
+def _difference_detail(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> Optional[Dict[str, str]]:
+    ranked = []
+    for key in SIMILARITY_STATS:
+        std = _safe_numeric(stds.get(key) or 1)
+        if std <= 0:
+            std = 1.0
+        delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
+        weight = _safe_numeric(weights.get(key))
+        impact = weight * delta
+        ranked.append((impact, key, _stat_has_signal(key, a, b)))
+
+    ranked.sort(key=lambda item: (item[2], item[0]), reverse=True)
+    if not ranked:
+        return None
+
+    key = None
+    for impact, candidate_key, has_signal in ranked:
+        if has_signal and impact > 0:
+            key = candidate_key
+            break
+    if key is None:
+        return None
+
+    label = SIMILARITY_LABELS.get(key)
+    formatter = SIMILARITY_FORMATTERS.get(key, lambda value: str(value))
+    if not label:
+        return None
+    return {
+        "label": label,
+        "target_value": formatter(b.get(key)),
+        "comp_value": formatter(a.get(key)),
+    }
+
+
 def _score_band(match_score: float) -> str:
     if match_score >= 80:
         return "Very close overall fit"
@@ -318,23 +446,34 @@ def _score_band(match_score: float) -> str:
     return "Looser fit"
 
 
-def _similarity_summary(match_score: float, reasons: List[str], gap_driver: Optional[str]) -> str:
-    if not reasons:
+def _similarity_summary(match_score: float, reason_details: List[Dict[str, str]], gap_detail: Optional[Dict[str, str]]) -> str:
+    if not reason_details:
         return f"{_score_band(match_score)} based on the weighted salary-model profile."
 
-    if len(reasons) == 1:
-        reason_text = reasons[0]
-    elif len(reasons) == 2:
-        reason_text = f"{reasons[0]} and {reasons[1]}"
-    else:
-        reason_text = f"{reasons[0]}, {reasons[1]}, and {reasons[2]}"
+    informative_reasons = [
+        row for row in reason_details if not (row["target_value"] == "0" and row["comp_value"] == "0") and not (row["target_value"] == "0.0%" and row["comp_value"] == "0.0%")
+    ]
+    if not informative_reasons:
+        return f"{_score_band(match_score)} based on a limited tracked stat sample for both players."
 
-    if gap_driver and gap_driver not in reasons:
+    closest_parts = [
+        f"{row['label']} ({row['target_value']} vs {row['comp_value']})"
+        for row in informative_reasons
+    ]
+    if len(closest_parts) == 1:
+        closest_text = closest_parts[0]
+    elif len(closest_parts) == 2:
+        closest_text = f"{closest_parts[0]} and {closest_parts[1]}"
+    else:
+        closest_text = f"{closest_parts[0]}, {closest_parts[1]}, and {closest_parts[2]}"
+
+    if gap_detail and all(gap_detail["label"] != row["label"] for row in reason_details):
         return (
-            f"{_score_band(match_score)}: closest in {reason_text}, with the score held down mostly by a bigger gap in {gap_driver}."
+            f"{_score_band(match_score)}: closest in {closest_text}; biggest gap is {gap_detail['label']} "
+            f"({gap_detail['target_value']} vs {gap_detail['comp_value']})."
         )
 
-    return f"{_score_band(match_score)}: closest in {reason_text}."
+    return f"{_score_band(match_score)}: closest in {closest_text}."
 
 
 def _top_similar_players(
@@ -361,9 +500,13 @@ def _top_similar_players(
 
     out: List[Dict] = []
     for idx, (dist, row) in enumerate(top, start=1):
-        match_score = round(_score_from_distribution(dist, all_distances), 1)
+        raw_match_score = _score_from_distribution(dist, all_distances)
+        informative_count = _informative_stat_count(row, target_row)
+        match_score = round(_coverage_adjusted_score(raw_match_score, informative_count), 1)
         reasons = _similarity_reasons(row, target_row, means, stds, weights)
         gap_driver = _difference_driver(row, target_row, means, stds, weights)
+        reason_details = _top_similarity_details(row, target_row, means, stds, weights)
+        gap_detail = _difference_detail(row, target_row, means, stds, weights)
         out.append(
             {
                 "rank": idx,
@@ -376,8 +519,8 @@ def _top_similar_players(
                 "match_score": match_score,
                 "similarity_reasons": reasons,
                 "difference_driver": gap_driver,
-                "similarity_summary": _similarity_summary(match_score, reasons, gap_driver),
-                "scoring_version": 2,
+                "similarity_summary": _similarity_summary(match_score, reason_details, gap_detail),
+                "scoring_version": 4,
             }
         )
     return out
@@ -399,14 +542,16 @@ def recompute_contract_research_comparables(db: Session, top_n: int = 10) -> Dic
     players = db.query(Player).filter(Player.active_roster.is_(True)).all()
     all_rows = [_player_row(p) for p in players if _position_group(p.position) in {"F", "D"}]
 
-    rows_by_group: Dict[str, List[Dict]] = {"F": [], "D": []}
+    rows_by_group: Dict[str, List[Dict]] = {"C": [], "W": [], "D": []}
     for row in all_rows:
-        rows_by_group[row["position"]].append(row)
+        similarity_position = row.get("similarity_position")
+        if similarity_position in rows_by_group:
+            rows_by_group[similarity_position].append(row)
 
     by_id = {int(p.id): p for p in players}
     updated = 0
 
-    for group in ("F", "D"):
+    for group in ("C", "W", "D"):
         group_rows = rows_by_group[group]
         if len(group_rows) < 2:
             continue
@@ -502,6 +647,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Player not found")
 
     target_group = _position_group(target_player.position)
+    target_similarity_group = _similarity_position_group(target_player.position)
     if target_group == "G":
         raise HTTPException(status_code=400, detail="Contract research currently supports forwards and defensemen")
 
@@ -516,7 +662,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if not stored_similars or any(
         (not row.get("similarity_summary"))
         or (not row.get("similarity_reasons"))
-        or (int(row.get("scoring_version") or 0) < 2)
+        or (int(row.get("scoring_version") or 0) < 4)
         or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
         for row in stored_similars
     ):
@@ -525,8 +671,8 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
         stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
 
     if not stored_similars:
-        target_group_rows = [row for row in all_rows if row["position"] == target_group]
-        stored_similars = _top_similar_players(target_group_rows, target_row, target_group, n=10)
+        target_group_rows = [row for row in all_rows if row.get("similarity_position") == target_similarity_group]
+        stored_similars = _top_similar_players(target_group_rows, target_row, target_similarity_group, n=10)
 
     risk_input = pd.DataFrame(
         [
