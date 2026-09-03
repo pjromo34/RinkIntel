@@ -295,15 +295,17 @@ def _score_from_distribution(distance: float, all_distances: List[float]) -> flo
         return 50.0
 
     distances = np.asarray(all_distances, dtype=float)
-    center = float(np.mean(distances))
-    spread = float(np.std(distances, ddof=0))
-    if not np.isfinite(spread) or spread <= 0:
-        spread = 1.0
+    bandwidth = float(np.percentile(distances, 25))
+    if not np.isfinite(bandwidth) or bandwidth <= 0:
+        bandwidth = float(np.median(distances)) if len(distances) else 1.0
+    if not np.isfinite(bandwidth) or bandwidth <= 0:
+        bandwidth = 1.0
 
-    # Lower distance means more similar. This maps an average comp to ~50,
-    # better-than-average comps above 50, and top-end comps into the 70-90 range.
-    z_score = (center - float(distance)) / spread
-    score = 100.0 / (1.0 + np.exp(-z_score))
+    # Heavy-tailed kernel similarity with a lower-quartile neighborhood scale.
+    # A comp around the target's close-neighbor threshold lands near 50, which
+    # creates more separation among the best matches than using the full-pool median.
+    ratio = float(distance) / bandwidth
+    score = 100.0 / (1.0 + (ratio * ratio))
     return float(max(0.0, min(100.0, score)))
 
 
@@ -541,7 +543,7 @@ def _top_similar_players(
                 "similarity_reasons": reasons,
                 "difference_driver": gap_driver,
                 "similarity_summary": _similarity_summary(match_score, reason_details, gap_detail),
-                "scoring_version": 6,
+                "scoring_version": 9,
             }
         )
     return out
@@ -683,7 +685,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if not stored_similars or any(
         (not row.get("similarity_summary"))
         or (not row.get("similarity_reasons"))
-        or (int(row.get("scoring_version") or 0) < 6)
+        or (int(row.get("scoring_version") or 0) < 9)
         or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
         for row in stored_similars
     ):
