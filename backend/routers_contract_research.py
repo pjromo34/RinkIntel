@@ -72,6 +72,7 @@ SIMILARITY_SIGNAL_FLOORS = {
     "dzone_giveaways": 10.0,
     "giveaways": 10.0,
 }
+WEIGHT_UNIFORM_BLEND = 0.35
 
 
 def get_db():
@@ -252,7 +253,13 @@ def _extract_model_weights(model: object, position_group: str) -> Dict[str, floa
     if raw_weights.sum() <= 0:
         raw_weights = np.ones(len(model_keys), dtype=float)
 
-    normalized = raw_weights / raw_weights.sum()
+    # Temper sharply dominant tree importances so one feature, like early-season
+    # goal totals, does not overwhelm the entire similarity profile while still
+    # preserving the model's ranking of what matters more.
+    tempered = np.sqrt(raw_weights)
+    normalized = tempered / tempered.sum()
+    uniform = np.full(len(model_keys), 1.0 / len(model_keys), dtype=float)
+    normalized = ((1.0 - WEIGHT_UNIFORM_BLEND) * normalized) + (WEIGHT_UNIFORM_BLEND * uniform)
     return {row_key: float(weight) for row_key, weight in zip(row_keys, normalized)}
 
 
@@ -267,9 +274,13 @@ def _feature_norms(group_rows: List[Dict]) -> tuple[pd.Series, pd.Series]:
     frame = pd.DataFrame(
         [{key: _safe_numeric(row.get(key)) for key in SIMILARITY_STATS} for row in group_rows]
     )
-    means = frame.mean(axis=0)
-    stds = frame.std(axis=0, ddof=0).replace(0, 1).fillna(1)
-    return means, stds
+    centers = frame.median(axis=0)
+    q1 = frame.quantile(0.25)
+    q3 = frame.quantile(0.75)
+    scales = ((q3 - q1) / 1.349).replace(0, np.nan)
+    fallback_scales = frame.std(axis=0, ddof=0).replace(0, np.nan)
+    scales = scales.fillna(fallback_scales).fillna(1)
+    return centers, scales
 
 
 def _weighted_distance(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> float:
@@ -277,7 +288,7 @@ def _weighted_distance(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
     for key in SIMILARITY_STATS:
         a_z = (_safe_numeric(a.get(key)) - _safe_numeric(means.get(key))) / _safe_numeric(stds.get(key) or 1)
         b_z = (_safe_numeric(b.get(key)) - _safe_numeric(means.get(key))) / _safe_numeric(stds.get(key) or 1)
-        delta = a_z - b_z
+        delta = max(-3.0, min(3.0, a_z - b_z))
         total += _effective_weight(key, a, b, weights) * (delta * delta)
     return float(np.sqrt(total))
 
@@ -543,7 +554,7 @@ def _top_similar_players(
                 "similarity_reasons": reasons,
                 "difference_driver": gap_driver,
                 "similarity_summary": _similarity_summary(match_score, reason_details, gap_detail),
-                "scoring_version": 9,
+                "scoring_version": 10,
             }
         )
     return out
@@ -685,7 +696,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if not stored_similars or any(
         (not row.get("similarity_summary"))
         or (not row.get("similarity_reasons"))
-        or (int(row.get("scoring_version") or 0) < 9)
+        or (int(row.get("scoring_version") or 0) < 10)
         or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
         for row in stored_similars
     ):
