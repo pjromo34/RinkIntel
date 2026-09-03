@@ -273,12 +273,36 @@ def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, wei
     return labels
 
 
-def _similarity_summary(match_score: float, reasons: List[str]) -> str:
+def _difference_driver(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> Optional[str]:
+    ranked = []
+    for key in SIMILARITY_STATS:
+        std = _safe_numeric(stds.get(key) or 1)
+        if std <= 0:
+            std = 1.0
+        delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
+        weight = _safe_numeric(weights.get(key))
+        impact = weight * delta
+        ranked.append((impact, key))
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    if not ranked:
+        return None
+    return SIMILARITY_LABELS.get(ranked[0][1])
+
+
+def _score_band(match_score: float) -> str:
+    if match_score >= 85:
+        return "Very close overall fit"
+    if match_score >= 70:
+        return "Good overall fit"
+    if match_score >= 55:
+        return "Moderate fit"
+    return "Looser fit"
+
+
+def _similarity_summary(match_score: float, reasons: List[str], gap_driver: Optional[str]) -> str:
     if not reasons:
-        return (
-            f"{match_score:.1f}% match because they line up closely across the same weighted salary stats "
-            "after every stat is put on the same scale."
-        )
+        return f"{_score_band(match_score)} based on the weighted salary-model profile."
 
     if len(reasons) == 1:
         reason_text = reasons[0]
@@ -287,10 +311,12 @@ def _similarity_summary(match_score: float, reasons: List[str]) -> str:
     else:
         reason_text = f"{reasons[0]}, {reasons[1]}, and {reasons[2]}"
 
-    return (
-        f"Strong match in {reason_text}. The score reflects how close they are across the weighted salary-model stats "
-        "after each stat is standardized."
-    )
+    if gap_driver and gap_driver not in reasons:
+        return (
+            f"{_score_band(match_score)}: closest in {reason_text}, with the score held down mostly by a bigger gap in {gap_driver}."
+        )
+
+    return f"{_score_band(match_score)}: closest in {reason_text}."
 
 
 def _top_similar_players(
@@ -319,6 +345,7 @@ def _top_similar_players(
     for idx, (dist, row) in enumerate(top, start=1):
         match_score = round(_score_from_distance(dist, max_distance), 1)
         reasons = _similarity_reasons(row, target_row, means, stds, weights)
+        gap_driver = _difference_driver(row, target_row, means, stds, weights)
         out.append(
             {
                 "rank": idx,
@@ -329,7 +356,9 @@ def _top_similar_players(
                 "headshot_url": row.get("headshot_url"),
                 "aav": float(row.get("aav") or 0),
                 "match_score": match_score,
-                "similarity_summary": _similarity_summary(match_score, reasons),
+                "similarity_reasons": reasons,
+                "difference_driver": gap_driver,
+                "similarity_summary": _similarity_summary(match_score, reasons, gap_driver),
             }
         )
     return out
@@ -465,7 +494,12 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Target data not available")
 
     stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
-    if not stored_similars or any(not row.get("similarity_summary") for row in stored_similars):
+    if not stored_similars or any(
+        (not row.get("similarity_summary"))
+        or (not row.get("similarity_reasons"))
+        or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
+        for row in stored_similars
+    ):
         recompute_contract_research_comparables(db, top_n=10)
         db.refresh(target_player)
         stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
