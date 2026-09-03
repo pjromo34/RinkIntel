@@ -49,6 +49,13 @@ function roundXgMax(value) {
   return Math.max(1, rounded);
 }
 
+function computePpsValue(player) {
+  const points = Number(player?.points) || 0;
+  const takeaways = Number(player?.takeaways) || 0;
+  const giveaways = Number(player?.giveaways) || 0;
+  return (points + (takeaways - giveaways)) / 60;
+}
+
 function DualRangeFilter({ label, min, max, step, value, onChange, formatValue }) {
   const [currentMin, currentMax] = value;
   const safeMax = Math.max(min, max);
@@ -213,14 +220,17 @@ export default function Players() {
       axios.get(`${API}/players`),
       axios.get(`${API}/players/teams`).catch(() => ({ data: [] })),
     ]).then(([playersRes, teamsRes]) => {
-      setPlayers(playersRes.data || []);
+      const loadedPlayers = (playersRes.data || []).map((player) => ({
+        ...player,
+        pps: computePpsValue(player),
+      }));
+      setPlayers(loadedPlayers);
       const map = {};
       (teamsRes.data || []).forEach((team) => {
         if (team?.team) map[team.team] = team;
       });
       setTeamMetaByName(map);
 
-      const loadedPlayers = playersRes.data || [];
       const marketBounds = getBounds(loadedPlayers, (p) => p.market_value, roundMoneyMax);
       const contractBounds = getBounds(loadedPlayers, (p) => p.aav, roundMoneyMax);
       const goalBounds = getBounds(loadedPlayers, (p) => p.goals, (value) => Math.max(1, Math.ceil(value)));
@@ -249,7 +259,7 @@ export default function Players() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(col);
-      setSortDir(['market_value', 'aav', 'goals', 'assists', 'points', 'xg_all_situations'].includes(col) ? 'desc' : 'asc');
+      setSortDir(['market_value', 'aav', 'goals', 'assists', 'points', 'xg_all_situations', 'pps'].includes(col) ? 'desc' : 'asc');
     }
   }
 
@@ -500,6 +510,7 @@ export default function Players() {
               <SortHeader col="goals" label="Goals" />
               <SortHeader col="assists" label="Assists" />
               <SortHeader col="points" label="Points" />
+              <SortHeader col="pps" label="PPS" />
               <SortHeader col="xg_all_situations" label="xG" />
             </tr>
           </thead>
@@ -538,6 +549,7 @@ export default function Players() {
                   <td>{Number(p.goals) || 0}</td>
                   <td>{Number(p.assists) || 0}</td>
                   <td>{Number(p.points) || 0}</td>
+                  <td>{Number(p.pps || 0).toFixed(2)}</td>
                   <td>{Number(p.xg_all_situations || 0).toFixed(2)}</td>
                 </tr>
               );
