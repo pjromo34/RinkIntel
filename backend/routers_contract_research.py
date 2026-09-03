@@ -63,6 +63,15 @@ SIMILARITY_FORMATTERS = {
     "dzone_giveaways": lambda value: str(int(round(_safe_numeric(value)))),
     "giveaways": lambda value: str(int(round(_safe_numeric(value)))),
 }
+SIMILARITY_SIGNAL_FLOORS = {
+    "goals": 8.0,
+    "primary_assists": 10.0,
+    "icetime": 400.0,
+    "takeaways": 10.0,
+    "hits": 20.0,
+    "dzone_giveaways": 10.0,
+    "giveaways": 10.0,
+}
 
 
 def get_db():
@@ -214,6 +223,18 @@ def _safe_numeric(value: object) -> float:
         return 0.0
 
 
+def _signal_multiplier(key: str, a: Dict, b: Dict) -> float:
+    floor = SIMILARITY_SIGNAL_FLOORS.get(key)
+    if not floor or floor <= 0:
+        return 1.0
+    strongest_value = max(abs(_safe_numeric(a.get(key))), abs(_safe_numeric(b.get(key))))
+    return float(max(0.05, min(1.0, strongest_value / floor)))
+
+
+def _effective_weight(key: str, a: Dict, b: Dict, weights: Dict[str, float]) -> float:
+    return _safe_numeric(weights.get(key)) * _signal_multiplier(key, a, b)
+
+
 def _extract_model_weights(model: object, position_group: str) -> Dict[str, float]:
     model_keys = [model_key for _, model_key in SIMILARITY_FEATURE_MAP]
     row_keys = [row_key for row_key, _ in SIMILARITY_FEATURE_MAP]
@@ -257,7 +278,7 @@ def _weighted_distance(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
         a_z = (_safe_numeric(a.get(key)) - _safe_numeric(means.get(key))) / _safe_numeric(stds.get(key) or 1)
         b_z = (_safe_numeric(b.get(key)) - _safe_numeric(means.get(key))) / _safe_numeric(stds.get(key) or 1)
         delta = a_z - b_z
-        total += _safe_numeric(weights.get(key)) * (delta * delta)
+        total += _effective_weight(key, a, b, weights) * (delta * delta)
     return float(np.sqrt(total))
 
 
@@ -307,7 +328,7 @@ def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, wei
         if std <= 0:
             std = 1.0
         delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
-        weight = _safe_numeric(weights.get(key))
+        weight = _effective_weight(key, a, b, weights)
         closeness = weight / (1.0 + delta)
         ranked.append((closeness, weight, key))
 
@@ -323,7 +344,16 @@ def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, wei
 
 
 def _stat_has_signal(key: str, a: Dict, b: Dict) -> bool:
-    return not (_safe_numeric(a.get(key)) == 0 and _safe_numeric(b.get(key)) == 0)
+    a_value = _safe_numeric(a.get(key))
+    b_value = _safe_numeric(b.get(key))
+    if a_value == 0 and b_value == 0:
+        return False
+
+    floor = SIMILARITY_SIGNAL_FLOORS.get(key)
+    if floor and floor > 0:
+        return max(abs(a_value), abs(b_value)) >= (floor * 0.5)
+
+    return True
 
 
 def _top_similarity_details(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> List[Dict[str, str]]:
@@ -333,7 +363,7 @@ def _top_similarity_details(a: Dict, b: Dict, means: pd.Series, stds: pd.Series,
         if std <= 0:
             std = 1.0
         delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
-        weight = _safe_numeric(weights.get(key))
+        weight = _effective_weight(key, a, b, weights)
         closeness = weight / (1.0 + delta)
         ranked.append((closeness, weight, key, _stat_has_signal(key, a, b)))
 
@@ -383,7 +413,7 @@ def _difference_driver(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
         if std <= 0:
             std = 1.0
         delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
-        weight = _safe_numeric(weights.get(key))
+        weight = _effective_weight(key, a, b, weights)
         impact = weight * delta
         ranked.append((impact, key))
 
@@ -400,7 +430,7 @@ def _difference_detail(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
         if std <= 0:
             std = 1.0
         delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
-        weight = _safe_numeric(weights.get(key))
+        weight = _effective_weight(key, a, b, weights)
         impact = weight * delta
         ranked.append((impact, key, _stat_has_signal(key, a, b)))
 
@@ -511,7 +541,7 @@ def _top_similar_players(
                 "similarity_reasons": reasons,
                 "difference_driver": gap_driver,
                 "similarity_summary": _similarity_summary(match_score, reason_details, gap_detail),
-                "scoring_version": 4,
+                "scoring_version": 6,
             }
         )
     return out
@@ -653,7 +683,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if not stored_similars or any(
         (not row.get("similarity_summary"))
         or (not row.get("similarity_reasons"))
-        or (int(row.get("scoring_version") or 0) < 4)
+        or (int(row.get("scoring_version") or 0) < 6)
         or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
         for row in stored_similars
     ):
