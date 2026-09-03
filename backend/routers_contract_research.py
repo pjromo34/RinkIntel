@@ -73,6 +73,8 @@ SIMILARITY_SIGNAL_FLOORS = {
     "giveaways": 10.0,
 }
 WEIGHT_UNIFORM_BLEND = 0.35
+DISPLAY_SCORE_PRIOR = [85.0, 79.0, 73.0, 67.0, 61.0, 55.0, 50.0, 46.0, 43.0, 40.0]
+DISPLAY_SCORE_PRIOR_BLEND = 0.45
 
 
 def get_db():
@@ -334,6 +336,37 @@ def _coverage_adjusted_score(raw_score: float, informative_count: int) -> float:
     return raw_score
 
 
+def _target_rank_score(rank_index: int, total: int) -> float:
+    if total <= 0:
+        return 50.0
+    if rank_index < len(DISPLAY_SCORE_PRIOR):
+        return DISPLAY_SCORE_PRIOR[rank_index]
+
+    if total <= len(DISPLAY_SCORE_PRIOR):
+        return DISPLAY_SCORE_PRIOR[-1]
+
+    start = len(DISPLAY_SCORE_PRIOR) - 1
+    remaining = max(1, total - len(DISPLAY_SCORE_PRIOR))
+    extra_drop = 15.0 * ((rank_index - start) / remaining)
+    return max(25.0, DISPLAY_SCORE_PRIOR[-1] - extra_drop)
+
+
+def _calibrate_ranked_display_scores(items: List[Dict]) -> List[Dict]:
+    if not items:
+        return items
+
+    total = len(items)
+    previous_score = 100.0
+    for idx, item in enumerate(items):
+        raw_score = _safe_numeric(item.get("match_score"))
+        prior_score = _target_rank_score(idx, total)
+        blended = ((1.0 - DISPLAY_SCORE_PRIOR_BLEND) * raw_score) + (DISPLAY_SCORE_PRIOR_BLEND * prior_score)
+        final_score = min(previous_score, blended)
+        item["match_score"] = round(max(0.0, min(100.0, final_score)), 1)
+        previous_score = item["match_score"]
+    return items
+
+
 def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> List[str]:
     ranked = []
     for key in SIMILARITY_STATS:
@@ -554,10 +587,10 @@ def _top_similar_players(
                 "similarity_reasons": reasons,
                 "difference_driver": gap_driver,
                 "similarity_summary": _similarity_summary(match_score, reason_details, gap_detail),
-                "scoring_version": 10,
+                "scoring_version": 11,
             }
         )
-    return out
+    return _calibrate_ranked_display_scores(out)
 
 
 def _parse_json_list(raw: Optional[str]) -> List[Dict]:
@@ -696,7 +729,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if not stored_similars or any(
         (not row.get("similarity_summary"))
         or (not row.get("similarity_reasons"))
-        or (int(row.get("scoring_version") or 0) < 10)
+        or (int(row.get("scoring_version") or 0) < 11)
         or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
         for row in stored_similars
     ):
