@@ -39,6 +39,18 @@ SIMILARITY_FEATURE_MAP = [
     ("giveaways", "I_F_giveaways"),
 ]
 SIMILARITY_STATS = [row_key for row_key, _ in SIMILARITY_FEATURE_MAP]
+SIMILARITY_LABELS = {
+    "onice_fenwick_pct": "shot share",
+    "onice_corsi_pct": "puck possession",
+    "onice_xgoals_pct": "chance quality",
+    "goals": "goal scoring",
+    "primary_assists": "playmaking",
+    "icetime": "usage",
+    "takeaways": "puck retrieval",
+    "hits": "physical play",
+    "dzone_giveaways": "defensive-zone puck management",
+    "giveaways": "turnover control",
+}
 
 
 def get_db():
@@ -239,6 +251,48 @@ def _score_from_distance(distance: float, max_distance: float) -> float:
     return float(max(0.0, min(100.0, score)))
 
 
+def _similarity_reasons(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weights: Dict[str, float]) -> List[str]:
+    ranked = []
+    for key in SIMILARITY_STATS:
+        std = _safe_numeric(stds.get(key) or 1)
+        if std <= 0:
+            std = 1.0
+        delta = abs(_safe_numeric(a.get(key)) - _safe_numeric(b.get(key))) / std
+        weight = _safe_numeric(weights.get(key))
+        closeness = weight / (1.0 + delta)
+        ranked.append((closeness, weight, key))
+
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    labels = []
+    for _, _, key in ranked:
+        label = SIMILARITY_LABELS.get(key)
+        if label and label not in labels:
+            labels.append(label)
+        if len(labels) == 3:
+            break
+    return labels
+
+
+def _similarity_summary(match_score: float, reasons: List[str]) -> str:
+    if not reasons:
+        return (
+            f"{match_score:.1f}% match because they line up closely across the same weighted salary stats "
+            "after every stat is put on the same scale."
+        )
+
+    if len(reasons) == 1:
+        reason_text = reasons[0]
+    elif len(reasons) == 2:
+        reason_text = f"{reasons[0]} and {reasons[1]}"
+    else:
+        reason_text = f"{reasons[0]}, {reasons[1]}, and {reasons[2]}"
+
+    return (
+        f"Strong match in {reason_text}. The score reflects how close they are across the weighted salary-model stats "
+        "after each stat is standardized."
+    )
+
+
 def _top_similar_players(
     group_rows: List[Dict],
     target_row: Dict,
@@ -263,6 +317,8 @@ def _top_similar_players(
 
     out: List[Dict] = []
     for idx, (dist, row) in enumerate(top, start=1):
+        match_score = round(_score_from_distance(dist, max_distance), 1)
+        reasons = _similarity_reasons(row, target_row, means, stds, weights)
         out.append(
             {
                 "rank": idx,
@@ -272,7 +328,8 @@ def _top_similar_players(
                 "team_logo_url": _team_logo_url(row.get("team")),
                 "headshot_url": row.get("headshot_url"),
                 "aav": float(row.get("aav") or 0),
-                "match_score": round(_score_from_distance(dist, max_distance), 1),
+                "match_score": match_score,
+                "similarity_summary": _similarity_summary(match_score, reasons),
             }
         )
     return out
@@ -408,7 +465,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Target data not available")
 
     stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
-    if not stored_similars:
+    if not stored_similars or any(not row.get("similarity_summary") for row in stored_similars):
         recompute_contract_research_comparables(db, top_n=10)
         db.refresh(target_player)
         stored_similars = _parse_json_list(getattr(target_player, "contract_similarity_json", None))
