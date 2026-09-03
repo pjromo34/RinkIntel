@@ -246,8 +246,26 @@ def _weighted_distance(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
 
 def _score_from_distance(distance: float, max_distance: float) -> float:
     if max_distance <= 0:
-        return 100.0
-    score = 100.0 * (1.0 - (distance / max_distance))
+        return 50.0
+    centered = distance / max_distance
+    score = 100.0 / (1.0 + np.exp(centered))
+    return float(max(0.0, min(100.0, score)))
+
+
+def _score_from_distribution(distance: float, all_distances: List[float]) -> float:
+    if not all_distances:
+        return 50.0
+
+    distances = np.asarray(all_distances, dtype=float)
+    center = float(np.mean(distances))
+    spread = float(np.std(distances, ddof=0))
+    if not np.isfinite(spread) or spread <= 0:
+        spread = 1.0
+
+    # Lower distance means more similar. This maps an average comp to ~50,
+    # better-than-average comps above 50, and top-end comps into the 70-90 range.
+    z_score = (center - float(distance)) / spread
+    score = 100.0 / (1.0 + np.exp(-z_score))
     return float(max(0.0, min(100.0, score)))
 
 
@@ -291,11 +309,11 @@ def _difference_driver(a: Dict, b: Dict, means: pd.Series, stds: pd.Series, weig
 
 
 def _score_band(match_score: float) -> str:
-    if match_score >= 85:
+    if match_score >= 80:
         return "Very close overall fit"
-    if match_score >= 70:
+    if match_score >= 60:
         return "Good overall fit"
-    if match_score >= 55:
+    if match_score >= 45:
         return "Moderate fit"
     return "Looser fit"
 
@@ -339,11 +357,11 @@ def _top_similar_players(
 
     ranked.sort(key=lambda item: (item[0], item[1].get("player_name", "")))
     top = ranked[:n]
-    max_distance = max((item[0] for item in top), default=0.0)
+    all_distances = [item[0] for item in ranked]
 
     out: List[Dict] = []
     for idx, (dist, row) in enumerate(top, start=1):
-        match_score = round(_score_from_distance(dist, max_distance), 1)
+        match_score = round(_score_from_distribution(dist, all_distances), 1)
         reasons = _similarity_reasons(row, target_row, means, stds, weights)
         gap_driver = _difference_driver(row, target_row, means, stds, weights)
         out.append(
@@ -359,6 +377,7 @@ def _top_similar_players(
                 "similarity_reasons": reasons,
                 "difference_driver": gap_driver,
                 "similarity_summary": _similarity_summary(match_score, reasons, gap_driver),
+                "scoring_version": 2,
             }
         )
     return out
@@ -497,6 +516,7 @@ def contract_research_report(player_id: int, db: Session = Depends(get_db)):
     if not stored_similars or any(
         (not row.get("similarity_summary"))
         or (not row.get("similarity_reasons"))
+        or (int(row.get("scoring_version") or 0) < 2)
         or ("The score reflects how close they are across the weighted salary-model stats after each stat is standardized." in str(row.get("similarity_summary") or ""))
         for row in stored_similars
     ):
