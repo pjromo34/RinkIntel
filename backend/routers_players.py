@@ -332,7 +332,7 @@ def build_player_payload(p: Player) -> Dict:
     fallback_start = explicit_start if explicit_start >= current_start else current_start
     fallback_aav = float(p.aav or 0)
 
-    if remaining_years > 0 and fallback_aav > 0:
+    if not contracts and remaining_years > 0 and fallback_aav > 0:
         for i in range(remaining_years):
             season_key = season_label_from_start(fallback_start + i)
             contract_map.setdefault(season_key, fallback_aav)

@@ -81,7 +81,7 @@ function buildLinePath(points) {
     .join(' ');
 }
 
-function PlayerValueChart({ data }) {
+function PlayerValueChart({ data, currentSeason }) {
   const width = 900;
   const height = 340;
   const margin = { top: 20, right: 20, bottom: 56, left: 72 };
@@ -213,7 +213,7 @@ function PlayerValueChart({ data }) {
               textAnchor="middle"
               fill="rgba(255,255,255,0.8)"
               fontSize="12"
-              fontWeight="600"
+              fontWeight={row.season === currentSeason ? '800' : '600'}
             >
               {row.season}
             </text>
@@ -261,10 +261,10 @@ function PlayerValueChart({ data }) {
         />
 
         {marketPoints.map((point, index) => (
-          <circle key={`market-${index}`} cx={point.x} cy={point.y} r="4.5" fill="#ffd700" />
+          <circle key={`market-${index}`} cx={point.x} cy={point.y} r={point.season === currentSeason ? '6' : '4.5'} fill="#ffd700" stroke={point.season === currentSeason ? '#ffffff' : 'none'} strokeWidth={point.season === currentSeason ? '2' : '0'} />
         ))}
         {actualPoints.map((point, index) => (
-          <circle key={`actual-${index}`} cx={point.x} cy={point.y} r="4.5" fill="#ffffff" />
+          <circle key={`actual-${index}`} cx={point.x} cy={point.y} r={point.season === currentSeason ? '6' : '4.5'} fill="#ffffff" stroke={point.season === currentSeason ? '#ffd700' : 'none'} strokeWidth={point.season === currentSeason ? '2' : '0'} />
         ))}
       </svg>
     </div>
@@ -604,7 +604,7 @@ export default function PlayerProfile() {
             )}
           </div>
 
-          <PlayerValueChart data={chartRows} />
+          <PlayerValueChart data={chartRows} currentSeason={currentSeason} />
 
           {historicalSnapshots.length > 0 && (
             <div style={{ marginTop: '24px' }}>
