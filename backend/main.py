@@ -168,10 +168,8 @@ def _bootstrap_data():
     db = SessionLocal()
     try:
         rollover_players_to_current_season(db)
-        player_count = db.query(Player).count()
-        if player_count == 0:
-            teams = list(TEAM_NAME_TO_TRICODE.values())
-            perform_import_rosters(db, teams)
+        teams = list(TEAM_NAME_TO_TRICODE.values())
+        perform_import_rosters(db, teams)
 
         market_value_count = db.query(Player).filter((Player.market_value == 0) | (Player.market_value.is_(None))).count()
         if market_value_count > 0:
