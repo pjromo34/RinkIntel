@@ -289,7 +289,7 @@ export default function Teams() {
             textAlign: 'center'
           }}
         >
-          Note: 2026-27 market values are projected on an 84-game pace sample.
+          Note: 2026-27 market values use an 82-game pace until any player reaches 30 games.
         </div>
       )}
     </div>

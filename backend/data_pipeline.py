@@ -19,7 +19,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from fastapi import HTTPException
 
-from backend.config import CURRENT_SEASON, PREVIOUS_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE, MARKET_VALUE_PACE_GAMES_BY_SEASON
+from backend.config import CURRENT_SEASON, PREVIOUS_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE, MARKET_VALUE_PACE_GAMES_BY_SEASON, MARKET_VALUE_PACE_STOP_GAMES
 from backend.model_loader import get_models
 from backend.routers_admin_players import TEAM_NAME_TO_TRICODE
 from backend.database import SessionLocal
@@ -311,6 +311,12 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
     if 'situation' in skaters_df_copy.columns:
         skaters_df_copy = skaters_df_copy[skaters_df_copy['situation'].astype(str).str.lower() == 'all']
 
+    games_col = 'games_played' if 'games_played' in skaters_df_copy.columns else 'games'
+    pace_is_active = True
+    if games_col in skaters_df_copy.columns:
+        games_played = pd.to_numeric(skaters_df_copy[games_col], errors='coerce').fillna(0)
+        pace_is_active = not games_played.ge(MARKET_VALUE_PACE_STOP_GAMES).any()
+
     name_col = 'name' if 'name' in skaters_df_copy.columns else ('playerName' if 'playerName' in skaters_df_copy.columns else None)
     team_col = 'team' if 'team' in skaters_df_copy.columns else ('teamCode' if 'teamCode' in skaters_df_copy.columns else None)
     if name_col is None:
@@ -435,7 +441,7 @@ def build_features_and_score_market_value(bios: List[Dict[str, Any]], skaters_df
             games_played_for_pace = max(0.0, float(feature['games_played'] or 0.0))
             pace_games_target = MARKET_VALUE_PACE_GAMES_BY_SEASON.get(CURRENT_SEASON)
             pace_factor = 1.0
-            if pace_games_target and games_played_for_pace > 0:
+            if pace_is_active and pace_games_target and games_played_for_pace > 0:
                 pace_factor = float(pace_games_target) / games_played_for_pace
 
             model = def_model if feature['position'] == 3 else fwd_model
