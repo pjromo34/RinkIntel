@@ -203,7 +203,7 @@ export default function PlayerEditor() {
   function addContract() {
     const years = Math.max(1, Number(player.contract_years_remaining) || 1);
     const aav = Number(player.aav) || 0;
-    const startSeason = nextContractStartSeason(contracts, player.season || "2025-26");
+    const startSeason = nextContractStartSeason(contracts, player.season || "2026-27");
     setContracts(prev => [
       ...prev,
       normalizeContract({

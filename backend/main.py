@@ -20,8 +20,6 @@ from backend.routers_admin_players import router as admin_players_router
 from backend.routers_auth import router as auth_router
 from backend.routers_simulation import router as simulation_router
 from backend.routers_arbitration import router as arbitration_router
-from backend.routers_contract_research import router as contract_research_router
-from backend.routers_contract_research import recompute_contract_research_comparables
 from threading import Thread, Event
 
 # Scheduler imports
@@ -29,7 +27,7 @@ from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_T
 from backend.routers_admin_players import fetch_salary_from_rapidapi, extract_salary_from_rapidapi
 from backend.models import Player, Article
 from backend.database import SessionLocal
-from backend.data_pipeline import run_market_value_pipeline
+from backend.data_pipeline import run_market_value_pipeline, rollover_players_to_current_season
 from typing import Optional
 
 # Database
@@ -78,7 +76,6 @@ app.include_router(admin_players_router)
 app.include_router(auth_router)
 app.include_router(simulation_router)   # <-- FIXED
 app.include_router(arbitration_router)
-app.include_router(contract_research_router)
 
 
 # ---------------------------------------------------------
@@ -151,7 +148,6 @@ def _scheduler_loop(stop_event: Event):
         try:
             teams = list(TEAM_NAME_TO_TRICODE.values())
             perform_import_rosters(db, teams)
-            recompute_contract_research_comparables(db, top_n=10)
         except Exception:
             pass
         finally:
@@ -171,6 +167,7 @@ def _start_scheduler():
 def _bootstrap_data():
     db = SessionLocal()
     try:
+        rollover_players_to_current_season(db)
         player_count = db.query(Player).count()
         if player_count == 0:
             teams = list(TEAM_NAME_TO_TRICODE.values())
@@ -182,11 +179,6 @@ def _bootstrap_data():
                 run_market_value_pipeline()
             except Exception:
                 pass
-
-        try:
-            recompute_contract_research_comparables(db, top_n=10)
-        except Exception:
-            pass
 
         db.query(Article).filter(Article.title.in_(SEED_ARTICLE_TITLES)).delete(synchronize_session=False)
         db.commit()

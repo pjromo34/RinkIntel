@@ -123,7 +123,7 @@ export default function PerformanceBonuses() {
 
   const currentSeason = useMemo(() => {
     const firstWithSeason = (players || []).find((p) => p?.season);
-    return firstWithSeason?.season || '2025-26';
+    return firstWithSeason?.season || '2026-27';
   }, [players]);
 
   const seasonPlayers = useMemo(() => {

@@ -19,7 +19,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from fastapi import HTTPException
 
-from backend.config import CURRENT_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE, MARKET_VALUE_PACE_GAMES_BY_SEASON
+from backend.config import CURRENT_SEASON, PREVIOUS_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE, MARKET_VALUE_PACE_GAMES_BY_SEASON
 from backend.model_loader import get_models
 from backend.routers_admin_players import TEAM_NAME_TO_TRICODE
 from backend.database import SessionLocal
@@ -522,6 +522,48 @@ def write_players_to_db(df: pd.DataFrame):
         db.commit()
     finally:
         db.close()
+
+
+def rollover_players_to_current_season(db) -> int:
+    """Preserve the previous season before starting the current season."""
+    players = [
+        player
+        for player in db.query(models.Player).all()
+        if player.season != CURRENT_SEASON
+    ]
+    rolled_over = 0
+    stat_fields = [
+        'goals', 'assists', 'points', 'games_played', 'xg_all_situations',
+        'icetime', 'high_danger_shots', 'blocked_shots', 'hits', 'takeaways',
+        'primary_assists', 'dzone_giveaways', 'onice_fenwick_pct',
+        'onice_corsi_pct', 'onice_xgoals_pct', 'giveaways', 'market_value',
+    ]
+
+    for player in players:
+        history = []
+        try:
+            parsed = json.loads(player.season_history_json or '[]')
+            if isinstance(parsed, list):
+                history = [row for row in parsed if isinstance(row, dict)]
+        except Exception:
+            history = []
+
+        prior_season = player.season or PREVIOUS_SEASON
+        if not any(row.get('season') == prior_season for row in history):
+            snapshot = {'season': prior_season, 'team': player.team}
+            for field in stat_fields:
+                snapshot[field] = getattr(player, field, None)
+            history.append(snapshot)
+            player.season_history_json = json.dumps(history)
+
+        player.season = CURRENT_SEASON
+        for field in stat_fields:
+            setattr(player, field, None if field == 'market_value' else 0)
+        rolled_over += 1
+
+    if rolled_over:
+        db.commit()
+    return rolled_over
 
 
 def update_existing_players_from_predictions(df: pd.DataFrame):
