@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
+import logging
 
 # ---------------------------------------------------------
 # Create FastAPI app  (MUST come before include_router)
@@ -32,6 +33,8 @@ from typing import Optional
 
 # Database
 from backend.database import Base, engine
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------
@@ -143,15 +146,21 @@ def _scheduler_loop(stop_event: Event):
         if stop_event.is_set():
             break
 
-        # perform import for all teams
+        # Refresh roster membership first, then refresh season stats and values.
         db = SessionLocal()
         try:
             teams = list(TEAM_NAME_TO_TRICODE.values())
-            perform_import_rosters(db, teams)
+            result = perform_import_rosters(db, teams)
+            logger.info("Nightly roster refresh complete: %s", result)
         except Exception:
-            pass
+            logger.exception("Nightly roster refresh failed")
         finally:
             db.close()
+        try:
+            run_market_value_pipeline()
+            logger.info("Nightly stats and market-value refresh complete")
+        except Exception:
+            logger.exception("Nightly stats and market-value refresh failed")
 
 
 @app.on_event("startup")
@@ -169,19 +178,18 @@ def _bootstrap_data():
     try:
         rollover_players_to_current_season(db)
         teams = list(TEAM_NAME_TO_TRICODE.values())
-        perform_import_rosters(db, teams)
-
-        market_value_count = db.query(Player).filter((Player.market_value == 0) | (Player.market_value.is_(None))).count()
-        if market_value_count > 0:
-            try:
-                run_market_value_pipeline()
-            except Exception:
-                pass
+        result = perform_import_rosters(db, teams)
+        logger.info("Startup roster refresh complete: %s", result)
+        try:
+            run_market_value_pipeline()
+            logger.info("Startup stats and market-value refresh complete")
+        except Exception:
+            logger.exception("Startup stats and market-value refresh failed")
 
         db.query(Article).filter(Article.title.in_(SEED_ARTICLE_TITLES)).delete(synchronize_session=False)
         db.commit()
     except Exception:
-        pass
+        logger.exception("Startup data bootstrap failed")
     finally:
         db.close()
 

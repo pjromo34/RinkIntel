@@ -714,6 +714,8 @@ def run_market_value_pipeline(update_existing_only: bool = True):
     print("Running market value pipeline for season", CURRENT_SEASON)
     bios = fetch_nhl_player_bios()
     skaters = fetch_moneypuck_skaters()
+    if skaters.empty:
+        raise RuntimeError("MoneyPuck returned no skater rows; refusing to overwrite current-season stats")
     xg_agg = aggregate_xg_from_skaters(skaters)
     df = build_features_and_score_market_value(bios, skaters, xg_agg)
     if update_existing_only:
