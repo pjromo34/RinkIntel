@@ -28,7 +28,11 @@ from backend.routers_admin_players import perform_import_rosters, TEAM_NAME_TO_T
 from backend.routers_admin_players import fetch_salary_from_rapidapi, extract_salary_from_rapidapi
 from backend.models import Player, Article
 from backend.database import SessionLocal
-from backend.data_pipeline import run_market_value_pipeline, rollover_players_to_current_season
+from backend.data_pipeline import (
+    run_market_value_pipeline,
+    rollover_players_to_current_season,
+    update_previous_season_snapshot_teams,
+)
 from typing import Optional
 
 # Database
@@ -177,6 +181,13 @@ def _bootstrap_data():
     db = SessionLocal()
     try:
         rollover_players_to_current_season(db)
+        try:
+            corrected_teams = update_previous_season_snapshot_teams(db)
+        except Exception:
+            logger.exception("Prior-season team snapshot reconciliation failed")
+            corrected_teams = 0
+        if corrected_teams:
+            logger.info("Corrected %s prior-season team snapshots", corrected_teams)
         teams = list(TEAM_NAME_TO_TRICODE.values())
         result = perform_import_rosters(db, teams)
         logger.info("Startup roster refresh complete: %s", result)

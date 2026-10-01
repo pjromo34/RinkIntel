@@ -21,7 +21,7 @@ from fastapi import HTTPException
 
 from backend.config import CURRENT_SEASON, PREVIOUS_SEASON, MONEYPUCK_SEASON_YEAR, MONEPUCK_SKATERS_URL, MONEPUCK_SHOTS_ZIP, SALARY_CAP_BY_SEASON, ROSTER_SEASON_CODE, MARKET_VALUE_PACE_GAMES_BY_SEASON, MARKET_VALUE_PACE_STOP_GAMES
 from backend.model_loader import get_models
-from backend.routers_admin_players import TEAM_NAME_TO_TRICODE
+from backend.routers_admin_players import TEAM_NAME_TO_TRICODE, TRICODE_TO_TEAM_NAME
 from backend.database import SessionLocal
 from backend import models
 
@@ -105,10 +105,12 @@ def fetch_nhl_player_bios(team_codes: Optional[List[str]] = None) -> List[Dict[s
     return bios
 
 
-def fetch_moneypuck_skaters() -> pd.DataFrame:
+def fetch_moneypuck_skaters(season_year: Optional[int] = None) -> pd.DataFrame:
     """Download MoneyPuck season skaters CSV and return DataFrame.
     """
     url = MONEPUCK_SKATERS_URL
+    if season_year is not None:
+        url = f"https://moneypuck.com/moneypuck/playerData/seasonSummary/{season_year}/regular/skaters.csv"
     req = urllib.request.Request(
         url,
         headers={
@@ -570,6 +572,86 @@ def rollover_players_to_current_season(db) -> int:
     if rolled_over:
         db.commit()
     return rolled_over
+
+
+def update_previous_season_snapshot_teams(db) -> int:
+    """Correct stale historical team labels using that season's player stats."""
+    players = db.query(models.Player).all()
+
+    def parse_history(player) -> List[Dict[str, Any]]:
+        try:
+            history = json.loads(player.season_history_json or '[]')
+            return [row for row in history if isinstance(row, dict)] if isinstance(history, list) else []
+        except Exception:
+            return []
+
+    snapshots_exist = any(
+        isinstance(row, dict) and row.get('season') == PREVIOUS_SEASON
+        for player in players
+        for row in parse_history(player)
+    )
+    if not snapshots_exist:
+        return 0
+
+    season_year = int(PREVIOUS_SEASON[:4])
+    skaters = fetch_moneypuck_skaters(season_year)
+    if skaters.empty or 'team' not in skaters.columns:
+        return 0
+    if 'situation' in skaters.columns:
+        skaters = skaters[skaters['situation'].astype(str).str.lower() == 'all']
+    if skaters.empty:
+        return 0
+
+    skaters = skaters[skaters['team'].astype(str).isin(TRICODE_TO_TEAM_NAME)]
+    if skaters.empty:
+        return 0
+
+    games_col = 'games_played' if 'games_played' in skaters.columns else 'games'
+    if games_col not in skaters.columns:
+        return 0
+
+    work = skaters.copy()
+    work['_games_played'] = pd.to_numeric(work[games_col], errors='coerce').fillna(0)
+    if 'name' in work.columns:
+        work['_normalized_name'] = work['name'].map(_normalize_name)
+
+    def team_lookup(identity_col: str) -> Dict[str, str]:
+        if identity_col not in work.columns:
+            return {}
+        rows = work.dropna(subset=[identity_col, 'team'])
+        totals = (
+            rows.groupby([identity_col, 'team'], dropna=True)['_games_played']
+            .max()
+            .reset_index()
+            .sort_values(['_games_played', 'team'], ascending=[False, True])
+            .drop_duplicates(identity_col)
+        )
+        return {str(row[identity_col]): str(row['team']) for _, row in totals.iterrows()}
+
+    by_id = team_lookup('playerId')
+    by_name = team_lookup('_normalized_name')
+    updated = 0
+    for player in players:
+        history = parse_history(player)
+        identity = str(player.nhl_player_id) if player.nhl_player_id else ''
+        team_code = by_id.get(identity) or by_name.get(_normalize_name(player.player_name))
+        team_name = TRICODE_TO_TEAM_NAME.get(team_code)
+        if not team_name:
+            continue
+
+        changed = False
+        for row in history:
+            if row.get('season') == PREVIOUS_SEASON and row.get('team') != team_name:
+                row['team'] = team_name
+                changed = True
+        if changed:
+            player.season_history_json = json.dumps(history)
+            db.add(player)
+            updated += 1
+
+    if updated:
+        db.commit()
+    return updated
 
 
 def update_existing_players_from_predictions(df: pd.DataFrame):
