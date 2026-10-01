@@ -84,7 +84,16 @@ def parse_json_list(raw: Optional[str]) -> list:
 
 def season_start(season_label: Optional[str]) -> int:
     import re
-    match = re.search(r"(\d{4})", str(season_label or ""))
+    value = str(season_label or "")
+    match = re.search(r"(\d{4})\s*-\s*(\d{2}|\d{4})(?!\d)", value)
+    if match:
+        start = int(match.group(1))
+        end = match.group(2)
+        if len(end) == 2 and end == f"{start % 100:02d}":
+            return start - 1
+        return start
+
+    match = re.search(r"(\d{4})", value)
     return int(match.group(1)) if match else 0
 
 
@@ -313,7 +322,15 @@ def contracts_from_map(contract_map: Dict[str, float]) -> List[Dict]:
 
 def contracts_for_response(contracts: list, contract_map: Dict[str, float]) -> List[Dict]:
     if contracts:
-        normalized = [row for row in contracts if isinstance(row, dict)]
+        normalized = []
+        for row in contracts:
+            if not isinstance(row, dict):
+                continue
+            contract = dict(row)
+            start = season_start(contract.get("start_season") or contract.get("season"))
+            if start:
+                contract["start_season"] = season_label_from_start(start)
+            normalized.append(contract)
         normalized.sort(key=lambda row: season_start(row.get("start_season") or row.get("season")))
         return normalized
     return contracts_from_map(contract_map)
@@ -379,7 +396,7 @@ def build_player_payload(p: Player) -> Dict:
             {
                 "season": season,
                 "market_value": None if is_goalie_position(p.position) else optional_float(row.get("market_value")),
-                "aav": float(contract_map.get(season, row.get("aav") or 0)),
+                "aav": current_aav if season == CURRENT_SEASON else float(contract_map.get(season, row.get("aav") or 0)),
             }
         )
 
