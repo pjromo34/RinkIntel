@@ -12,7 +12,7 @@ SALARY_CAP_BY_SEASON = {
 # Optional season-specific game pace used only for market value model inputs.
 # If a season is absent, raw in-season totals are used as-is.
 MARKET_VALUE_PACE_GAMES_BY_SEASON = {
-    "2026-27": 82,
+    "2026-27": 84,
 }
 MARKET_VALUE_PACE_STOP_GAMES = 30
 
